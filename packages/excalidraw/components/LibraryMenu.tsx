@@ -101,12 +101,48 @@ const LibraryMenuContent = memo(
               });
             }
           }
+
+          // Calculate default group name
+          let defaultNum = 1;
+          const nameRegex = /^Group\s+(\d+)$/i;
+          for (const item of libraryItems) {
+            const match = (item.name || "").match(nameRegex);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (num >= defaultNum) {
+                defaultNum = num + 1;
+              }
+            }
+          }
+          const defaultName = `Group ${defaultNum}`;
+
+          let groupName = window.prompt("Enter a name for this library group:", defaultName);
+          if (groupName === null) {
+            // User cancelled
+            return;
+          }
+
+          groupName = groupName.trim();
+          if (!groupName) {
+            groupName = defaultName;
+          }
+
+          // Handle duplicate names with auto-incrementing suffixes
+          let finalName = groupName;
+          let suffix = 1;
+          const existingNames = new Set(libraryItems.map(item => item.name));
+          while (existingNames.has(finalName)) {
+            finalName = `${groupName} (${suffix})`;
+            suffix++;
+          }
+
           const nextItems: LibraryItems = [
             {
               status: "unpublished",
               elements: processedElements,
               id: randomId(),
               created: Date.now(),
+              name: finalName,
             },
             ...libraryItems,
           ];
@@ -158,15 +194,6 @@ const LibraryMenuContent = memo(
           onSelectItems={onSelectItems}
           selectedItems={selectedItems}
         />
-        {showBtn && (
-          <LibraryMenuControlButtons
-            className="library-menu-control-buttons--at-bottom"
-            style={{ padding: "16px 12px 0 12px" }}
-            id={id}
-            libraryReturnUrl={libraryReturnUrl}
-            theme={theme}
-          />
-        )}
       </LibraryMenuWrapper>
     );
   },

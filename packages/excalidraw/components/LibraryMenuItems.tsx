@@ -18,7 +18,9 @@ import { useLibraryCache } from "../hooks/useLibraryItemSvg";
 import { useScrollPosition } from "../hooks/useScrollPosition";
 import { t } from "../i18n";
 
+import { DefaultSidebar } from "./DefaultSidebar";
 import { LibraryMenuControlButtons } from "./LibraryMenuControlButtons";
+import ConfirmDialog from "./ConfirmDialog";
 import { LibraryDropdownMenu } from "./LibraryMenuHeaderContent";
 import {
   LibraryMenuSection,
@@ -27,6 +29,9 @@ import {
 
 import Spinner from "./Spinner";
 import Stack from "./Stack";
+
+import { collapseDownIcon, collapseUpIcon, TrashIcon, pencilIcon } from "./icons";
+import { useApp } from "./App";
 
 import "./LibraryMenuItems.scss";
 
@@ -92,6 +97,8 @@ export default function LibraryMenuItems({
   >(null);
 
   const [searchInputValue, setSearchInputValue] = useState("");
+  const [activeTab, setActiveTab] = useState<"personal" | "excalidraw">("personal");
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const IS_LIBRARY_EMPTY = !libraryItems.length && !pendingElements.length;
 
@@ -250,6 +257,48 @@ export default function LibraryMenuItems({
       ? CACHED_ITEMS_RENDERED_PER_BATCH
       : ITEMS_RENDERED_PER_BATCH;
 
+  const { library } = useApp();
+
+  const [renamingGroup, setRenamingGroup] = useState<{ name: string; isPublished: boolean } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState<{ name: string; isPublished: boolean } | null>(null);
+
+  const submitRename = () => {
+    if (renamingGroup && renameValue && renameValue.trim() && renameValue.trim() !== renamingGroup.name) {
+      const updatedItems = libraryItems.map(item => {
+        const itemIsPublished = item.status === "published";
+        if (itemIsPublished === renamingGroup.isPublished && item.name && item.name.trim() === renamingGroup.name) {
+          return { ...item, name: renameValue.trim() };
+        }
+        return item;
+      });
+      library.setLibrary(updatedItems);
+    }
+    setRenamingGroup(null);
+  };
+
+  const handleRenameGroup = (e: React.MouseEvent, oldName: string, isPublished: boolean = false) => {
+    e.stopPropagation();
+    setRenamingGroup({ name: oldName, isPublished });
+    setRenameValue(oldName);
+  };
+
+  const executeDeleteGroup = () => {
+    if (deleteGroupConfirm) {
+      const updatedItems = libraryItems.filter(item => {
+        const itemIsPublished = item.status === "published";
+        return !(itemIsPublished === deleteGroupConfirm.isPublished && item.name && item.name.trim() === deleteGroupConfirm.name);
+      });
+      library.setLibrary(updatedItems);
+      setDeleteGroupConfirm(null);
+    }
+  };
+
+  const handleDeleteGroup = (e: React.MouseEvent, groupName: string, isPublished: boolean = false) => {
+    e.stopPropagation();
+    setDeleteGroupConfirm({ name: groupName, isPublished });
+  };
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     // focus could be stolen by tab trigger button
@@ -260,69 +309,326 @@ export default function LibraryMenuItems({
 
   const JSX_whenNotSearching = !IS_SEARCHING && (
     <>
-      {!IS_LIBRARY_EMPTY && (
-        <div className="library-menu-items-container__header">
-          {t("labels.personalLib")}
-        </div>
-      )}
-      {!pendingElements.length && !unpublishedItems.length ? (
-        <div className="library-menu-items__no-items">
-          {!publishedItems.length && (
-            <div className="library-menu-items__no-items__label">
-              {t("library.noItems")}
+      {(!IS_LIBRARY_EMPTY || publishedItems.length > 0) && (
+        <DefaultSidebar.TabTriggers>
+          <div className="library-tabs" style={{ margin: "0 auto" }}>
+            <div className="library-tabs-container">
+              <button
+                className={activeTab === "personal" ? "active" : ""}
+                onClick={() => setActiveTab("personal")}
+              >
+                {t("labels.personalLib")}
+              </button>
+              <button
+                className={activeTab === "excalidraw" ? "active" : ""}
+                onClick={() => setActiveTab("excalidraw")}
+              >
+                {t("labels.excalidrawLib")}
+              </button>
             </div>
-          )}
-          <div className="library-menu-items__no-items__hint">
-            {publishedItems.length > 0
-              ? t("library.hint_emptyPrivateLibrary")
-              : t("library.hint_emptyLibrary")}
           </div>
-        </div>
-      ) : (
-        <LibraryMenuSectionGrid>
-          {pendingElements.length > 0 && (
-            <LibraryMenuSection
-              itemsRenderedPerBatch={itemsRenderedPerBatch}
-              items={[{ id: null, elements: pendingElements }]}
-              onItemSelectToggle={onItemSelectToggle}
-              onItemDrag={onItemDrag}
-              onClick={onAddToLibraryClick}
-              isItemSelected={isItemSelected}
-              svgCache={svgCache}
-            />
-          )}
-          <LibraryMenuSection
-            itemsRenderedPerBatch={itemsRenderedPerBatch}
-            items={unpublishedItems}
-            onItemSelectToggle={onItemSelectToggle}
-            onItemDrag={onItemDrag}
-            onClick={onItemClick}
-            isItemSelected={isItemSelected}
-            svgCache={svgCache}
-          />
-        </LibraryMenuSectionGrid>
+        </DefaultSidebar.TabTriggers>
       )}
 
-      {publishedItems.length > 0 && (
-        <div
-          className="library-menu-items-container__header"
-          style={{ marginTop: "0.75rem" }}
-        >
-          {t("labels.excalidrawLib")}
-        </div>
+      {activeTab === "personal" && (
+        !pendingElements.length && !unpublishedItems.length ? (
+          <div className="library-menu-items__no-items">
+            <div className="library-menu-items__no-items__hint">
+              {t("library.hint_emptyPrivateLibrary")}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+            {pendingElements.length > 0 && (
+              <div className="library-menu-group">
+                <LibraryMenuSectionGrid>
+                  <LibraryMenuSection
+                    itemsRenderedPerBatch={itemsRenderedPerBatch}
+                    items={[{ id: null, elements: pendingElements }]}
+                    onItemSelectToggle={onItemSelectToggle}
+                    onItemDrag={onItemDrag}
+                    onClick={onAddToLibraryClick}
+                    isItemSelected={isItemSelected}
+                    svgCache={svgCache}
+                  />
+                </LibraryMenuSectionGrid>
+              </div>
+            )}
+            {(() => {
+              const groups: Record<string, LibraryItem[]> = {};
+              const ungrouped: LibraryItem[] = [];
+              unpublishedItems.forEach((item) => {
+                if (item.name && item.name.trim()) {
+                  const groupName = item.name.trim();
+                  if (!groups[groupName]) groups[groupName] = [];
+                  groups[groupName].push(item);
+                } else {
+                  ungrouped.push(item);
+                }
+              });
+
+              return (
+                <>
+                  {Object.entries(groups).map(([groupName, groupItems]) => {
+                    const isExpanded = expandedGroups[groupName] !== false; // default true
+                    return (
+                      <div key={groupName} className="library-menu-group" style={{ display: "flex", flexDirection: "column" }}>
+                        <div
+                          className="library-menu-items-container__header"
+                          style={{
+                            fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
+                            display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
+                            marginBottom: isExpanded ? "0.25rem" : "0", position: "relative"
+                          }}
+                          onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }))}
+                          onMouseEnter={(e) => {
+                            const actions = e.currentTarget.querySelector('.group-actions') as HTMLElement;
+                            if (actions) actions.style.display = 'flex';
+                          }}
+                          onMouseLeave={(e) => {
+                            const actions = e.currentTarget.querySelector('.group-actions') as HTMLElement;
+                            if (actions) actions.style.display = 'none';
+                          }}
+                        >
+                          {renamingGroup?.name === groupName && renamingGroup?.isPublished === false ? (
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={submitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") submitRename();
+                                if (e.key === "Escape") setRenamingGroup(null);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="library-group-rename-input"
+                              style={{ border: "1px solid var(--color-primary)", borderRadius: "4px", padding: "2px 4px", fontSize: "0.85rem", width: "120px", outline: "none", color: "var(--text-primary-color)", background: "transparent" }}
+                            />
+                          ) : (
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{groupName}</span>
+                          )}
+                          <div style={{ display: "flex", alignItems: "center", width: "1.5rem", height: "1.5rem", justifyContent: "center", fill: "currentColor" }}>
+                            {isExpanded ? collapseUpIcon : collapseDownIcon}
+                          </div>
+                          <div className="group-actions" style={{ display: 'none', marginLeft: 'auto', gap: '0.25rem', alignItems: 'center' }}>
+                            <div 
+                              title="重命名"
+                              onClick={(e) => handleRenameGroup(e, groupName)}
+                              style={{ width: '1.2rem', height: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-gray-10)', borderRadius: '4px', padding: '2px', cursor: 'pointer', color: 'var(--color-gray-70)', fill: 'currentColor' }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-gray-20)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-gray-10)'}
+                            >
+                              {pencilIcon}
+                            </div>
+                            <div 
+                              title="删除"
+                              onClick={(e) => handleDeleteGroup(e, groupName)}
+                              style={{ width: '1.2rem', height: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffe3e3', borderRadius: '4px', padding: '2px', cursor: 'pointer', color: '#e03131', fill: 'currentColor' }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#ffc9c9'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = '#ffe3e3'}
+                            >
+                              {TrashIcon}
+                            </div>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <LibraryMenuSectionGrid>
+                            <LibraryMenuSection
+                              itemsRenderedPerBatch={itemsRenderedPerBatch}
+                              items={groupItems}
+                              onItemSelectToggle={onItemSelectToggle}
+                              onItemDrag={onItemDrag}
+                              onClick={onItemClick}
+                              isItemSelected={isItemSelected}
+                              svgCache={svgCache}
+                            />
+                          </LibraryMenuSectionGrid>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {ungrouped.length > 0 && (() => {
+                    const isExpanded = expandedGroups["__ungrouped"] !== false;
+                    return (
+                      <div className="library-menu-group" style={{ display: "flex", flexDirection: "column", marginTop: "0.25rem" }}>
+                        <div
+                          className="library-menu-items-container__header"
+                          style={{
+                            fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
+                            display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
+                            marginBottom: isExpanded ? "0.25rem" : "0"
+                          }}
+                          onClick={() => setExpandedGroups(prev => ({ ...prev, "__ungrouped": !isExpanded }))}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>未分组 (Ungrouped)</span>
+                          <div style={{ display: "flex", alignItems: "center", width: "1.5rem", height: "1.5rem", justifyContent: "center", fill: "currentColor" }}>
+                            {isExpanded ? collapseUpIcon : collapseDownIcon}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <LibraryMenuSectionGrid>
+                            <LibraryMenuSection
+                              itemsRenderedPerBatch={itemsRenderedPerBatch}
+                              items={ungrouped}
+                              onItemSelectToggle={onItemSelectToggle}
+                              onItemDrag={onItemDrag}
+                              onClick={onItemClick}
+                              isItemSelected={isItemSelected}
+                              svgCache={svgCache}
+                            />
+                          </LibraryMenuSectionGrid>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+          </div>
+        )
       )}
-      {publishedItems.length > 0 && (
-        <LibraryMenuSectionGrid>
-          <LibraryMenuSection
-            itemsRenderedPerBatch={itemsRenderedPerBatch}
-            items={publishedItems}
-            onItemSelectToggle={onItemSelectToggle}
-            onItemDrag={onItemDrag}
-            onClick={onItemClick}
-            isItemSelected={isItemSelected}
-            svgCache={svgCache}
-          />
-        </LibraryMenuSectionGrid>
+
+      {activeTab === "excalidraw" && (
+        publishedItems.length === 0 ? (
+          <div className="library-menu-items__no-items">
+            <div className="library-menu-items__no-items__hint">
+              目前还没有导入相关的包含属性的内容。
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {(() => {
+              const groups: Record<string, LibraryItem[]> = {};
+              const ungrouped: LibraryItem[] = [];
+              publishedItems.forEach((item) => {
+                if (item.name && item.name.trim()) {
+                  const groupName = item.name.trim();
+                  if (!groups[groupName]) groups[groupName] = [];
+                  groups[groupName].push(item);
+                } else {
+                  ungrouped.push(item);
+                }
+              });
+
+              return (
+                <>
+                  {Object.entries(groups).map(([groupName, groupItems]) => {
+                    const isExpanded = expandedGroups[groupName] !== false; // default true
+                    return (
+                      <div key={groupName} className="library-menu-group" style={{ display: "flex", flexDirection: "column" }}>
+                        <div
+                          className="library-menu-items-container__header"
+                          style={{
+                            fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
+                            display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
+                            marginBottom: isExpanded ? "0.25rem" : "0", position: "relative"
+                          }}
+                          onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }))}
+                          onMouseEnter={(e) => {
+                            const actions = e.currentTarget.querySelector('.group-actions') as HTMLElement;
+                            if (actions) actions.style.display = 'flex';
+                          }}
+                          onMouseLeave={(e) => {
+                            const actions = e.currentTarget.querySelector('.group-actions') as HTMLElement;
+                            if (actions) actions.style.display = 'none';
+                          }}
+                        >
+                          {renamingGroup?.name === groupName && renamingGroup?.isPublished === true ? (
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onBlur={submitRename}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") submitRename();
+                                if (e.key === "Escape") setRenamingGroup(null);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="library-group-rename-input"
+                              style={{ border: "1px solid var(--color-primary)", borderRadius: "4px", padding: "2px 4px", fontSize: "0.85rem", width: "120px", outline: "none", color: "var(--text-primary-color)", background: "transparent" }}
+                            />
+                          ) : (
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{groupName}</span>
+                          )}
+                          <div style={{ display: "flex", alignItems: "center", width: "1.5rem", height: "1.5rem", justifyContent: "center", fill: "currentColor" }}>
+                            {isExpanded ? collapseUpIcon : collapseDownIcon}
+                          </div>
+                          <div className="group-actions" style={{ display: 'none', marginLeft: 'auto', gap: '0.25rem', alignItems: 'center' }}>
+                            <div 
+                              title="重命名"
+                              onClick={(e) => handleRenameGroup(e, groupName, true)}
+                              style={{ width: '1.2rem', height: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-gray-10)', borderRadius: '4px', padding: '2px', cursor: 'pointer', color: 'var(--color-gray-70)', fill: 'currentColor' }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-gray-20)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = 'var(--color-gray-10)'}
+                            >
+                              {pencilIcon}
+                            </div>
+                            <div 
+                              title="删除"
+                              onClick={(e) => handleDeleteGroup(e, groupName, true)}
+                              style={{ width: '1.2rem', height: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffe3e3', borderRadius: '4px', padding: '2px', cursor: 'pointer', color: '#e03131', fill: 'currentColor' }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#ffc9c9'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = '#ffe3e3'}
+                            >
+                              {TrashIcon}
+                            </div>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <LibraryMenuSectionGrid>
+                            <LibraryMenuSection
+                              itemsRenderedPerBatch={itemsRenderedPerBatch}
+                              items={groupItems}
+                              onItemSelectToggle={onItemSelectToggle}
+                              onItemDrag={onItemDrag}
+                              onClick={onItemClick}
+                              isItemSelected={isItemSelected}
+                              svgCache={svgCache}
+                            />
+                          </LibraryMenuSectionGrid>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {ungrouped.length > 0 && (() => {
+                    const isExpanded = expandedGroups["__ungrouped"] !== false;
+                    return (
+                      <div className="library-menu-group" style={{ display: "flex", flexDirection: "column", marginTop: "0.25rem" }}>
+                        <div
+                          className="library-menu-items-container__header"
+                          style={{
+                            fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
+                            display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
+                            marginBottom: isExpanded ? "0.25rem" : "0"
+                          }}
+                          onClick={() => setExpandedGroups(prev => ({ ...prev, "__ungrouped": !isExpanded }))}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>未分组 (Ungrouped)</span>
+                          <div style={{ display: "flex", alignItems: "center", width: "1.5rem", height: "1.5rem", justifyContent: "center", fill: "currentColor" }}>
+                            {isExpanded ? collapseUpIcon : collapseDownIcon}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <LibraryMenuSectionGrid>
+                            <LibraryMenuSection
+                              itemsRenderedPerBatch={itemsRenderedPerBatch}
+                              items={ungrouped}
+                              onItemSelectToggle={onItemSelectToggle}
+                              onItemDrag={onItemDrag}
+                              onClick={onItemClick}
+                              isItemSelected={isItemSelected}
+                              svgCache={svgCache}
+                            />
+                          </LibraryMenuSectionGrid>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+          </div>
+        )
       )}
     </>
   );
@@ -440,6 +746,26 @@ export default function LibraryMenuItems({
           />
         )}
       </Stack.Col>
+      {deleteGroupConfirm && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 9999999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "var(--island-bg-color, white)", padding: "24px", borderRadius: "8px", width: "320px", textAlign: "center", border: "1px solid var(--color-gray-20)", boxShadow: "none" }}>
+            <h3 style={{ margin: "0 0 16px 0", color: "var(--text-primary-color)" }}>确认删除分组？</h3>
+            <p style={{ margin: "0 0 24px 0", fontSize: "14px", color: "var(--color-gray-50)" }}>
+              确定要删除 "{deleteGroupConfirm.name}" 素材组及其中所有素材吗？此操作不可恢复。
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setDeleteGroupConfirm(null); }}
+                style={{ flex: 1, padding: "8px 0", background: "white", color: "#495057", border: "1px solid #ced4da", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+              >取消</button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); executeDeleteGroup(); }}
+                style={{ flex: 1, padding: "8px 0", background: "#e03131", color: "#ffffff", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+              >确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

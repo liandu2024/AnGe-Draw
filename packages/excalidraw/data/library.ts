@@ -318,28 +318,18 @@ class Library {
           } else {
             nextItems = restoreLibraryItems(source, defaultStatus);
           }
-          if (
-            !prompt ||
-            window.confirm(
-              t("alerts.confirmAddLibrary", {
-                numShapes: nextItems.length,
-              }),
-            )
-          ) {
-            if (prompt) {
-              // focus container if we've prompted. We focus conditionally
-              // lest `props.autoFocus` is disabled (in which case we should
-              // focus only on user action such as prompt confirm)
-              this.app.focusContainer();
-            }
-
-            if (merge) {
-              resolve(mergeLibraryItems(this.currLibraryItems, nextItems));
-            } else {
-              resolve(nextItems);
-            }
-          } else {
+          if (prompt) {
+            this.app.setState({
+              openDialog: { name: "libraryImport", items: nextItems },
+            });
             reject(new AbortError());
+            return;
+          }
+
+          if (merge) {
+            resolve(mergeLibraryItems(this.currLibraryItems, nextItems));
+          } else {
+            resolve(nextItems);
           }
         } catch (error: any) {
           reject(error);

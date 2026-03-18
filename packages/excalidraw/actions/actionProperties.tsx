@@ -1473,7 +1473,7 @@ export const actionChangeVerticalAlign = register<VerticalAlign>({
   },
 });
 
-export const actionChangeRoundness = register<"sharp" | "round">({
+export const actionChangeRoundness = register<"sharp" | "round" | { type: "round", value: number }>({
   name: "changeRoundness",
   label: "Change edge roundness",
   trackEvent: false,
@@ -1484,20 +1484,24 @@ export const actionChangeRoundness = register<"sharp" | "round">({
           return el;
         }
 
+        const isRound = typeof value === "object" ? value.type === "round" : value === "round";
+        const customValue = typeof value === "object" ? value.value : undefined;
+        const existingValue = el.roundness?.value;
+
         return newElementWith(el, {
-          roundness:
-            value === "round"
-              ? {
-                  type: isUsingAdaptiveRadius(el.type)
-                    ? ROUNDNESS.ADAPTIVE_RADIUS
-                    : ROUNDNESS.PROPORTIONAL_RADIUS,
-                }
-              : null,
+          roundness: isRound
+            ? {
+                type: isUsingAdaptiveRadius(el.type)
+                  ? ROUNDNESS.ADAPTIVE_RADIUS
+                  : ROUNDNESS.PROPORTIONAL_RADIUS,
+                value: customValue !== undefined ? customValue : existingValue,
+              }
+            : null,
         });
       }),
       appState: {
         ...appState,
-        currentItemRoundness: value,
+        currentItemRoundness: typeof value === "object" ? value.type : value,
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };
@@ -1511,6 +1515,25 @@ export const actionChangeRoundness = register<"sharp" | "round">({
     const hasLegacyRoundness = targetElements.some(
       (el) => el.roundness?.type === ROUNDNESS.LEGACY,
     );
+
+    const roundnessState = getFormValue(
+      elements,
+      app,
+      (element) =>
+        hasLegacyRoundness
+          ? null
+          : element.roundness
+          ? "round"
+          : "sharp",
+      (element) =>
+        !isArrowElement(element) && element.hasOwnProperty("roundness"),
+      (hasSelection) =>
+        hasSelection ? null : appState.currentItemRoundness,
+    );
+
+    const sliderValue = targetElements.length > 0 
+      ? targetElements[0].roundness?.value ?? 32 
+      : 32;
 
     return (
       <fieldset>
@@ -1530,24 +1553,29 @@ export const actionChangeRoundness = register<"sharp" | "round">({
                 icon: EdgeRoundIcon,
               },
             ]}
-            value={getFormValue(
-              elements,
-              app,
-              (element) =>
-                hasLegacyRoundness
-                  ? null
-                  : element.roundness
-                  ? "round"
-                  : "sharp",
-              (element) =>
-                !isArrowElement(element) && element.hasOwnProperty("roundness"),
-              (hasSelection) =>
-                hasSelection ? null : appState.currentItemRoundness,
-            )}
+            value={roundnessState}
             onChange={(value) => updateData(value)}
           />
           {renderAction("togglePolygon")}
         </div>
+        
+        {roundnessState === "round" && (
+          <div style={{ marginTop: "0.2rem", paddingLeft: "2px", paddingRight: "2px" }}>
+            <label className="control-label" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "0.8rem" }}>圆角幅度</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={sliderValue}
+                onChange={(e) => updateData({ type: "round", value: Number(e.target.value) })}
+                style={{ flexGrow: 1, height: "4px", accentColor: "var(--color-primary)" }}
+              />
+              <span style={{ fontSize: "0.8rem", width: "20px", textAlign: "right" }}>{Math.round(sliderValue)}</span>
+            </label>
+          </div>
+        )}
       </fieldset>
     );
   },

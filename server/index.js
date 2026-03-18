@@ -1,0 +1,584 @@
+import express from 'express';
+import cors from 'cors';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { db } from './db.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const JWT_SECRET = 'excalidraw_local_secret_key_change_me_in_prod';
+
+// Auth Middleware
+const authenticate = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
+  next();
+};
+
+// --- AUTH ROUTES ---
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+
+  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+    if (err) return res.status(500).json({ error: 'Internal server error' });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  });
+});
+
+app.get('/api/auth/me', authenticate, (req, res) => {
+  db.get('SELECT id, username, role, auth_type FROM users WHERE id = ?', [req.user.id], (err, user) => {
+    if (err || !user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user });
+  });
+});
+
+app.put('/api/auth/password', authenticate, async (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 1) {
+    return res.status(400).json({ error: 'New password is required' });
+  }
+
+  try {
+    const hash = await bcrypt.hash(newPassword, 10);
+    // If user is OIDC-only, changing password makes them oidc_local
+    db.get('SELECT auth_type FROM users WHERE id = ?', [req.user.id], (err, row) => {
+      if (err || !row) return res.status(404).json({ error: 'User not found' });
+      const newAuthType = row.auth_type === 'oidc' ? 'oidc_local' : row.auth_type;
+      db.run(
+        'UPDATE users SET password_hash = ?, auth_type = ? WHERE id = ?',
+        [hash, newAuthType, req.user.id],
+        function(err2) {
+          if (err2) return res.status(500).json({ error: 'Failed to update password' });
+          if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
+          res.json({ success: true, auth_type: newAuthType });
+        }
+      );
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to process password change' });
+  }
+});
+
+// --- PERSONAL LIBRARY API ---
+app.get('/api/library', authenticate, (req, res) => {
+  db.get('SELECT library_data FROM user_library WHERE user_id = ?', [req.user.id], (err, row) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).send('Database error');
+    }
+    if (row && row.library_data) {
+      try {
+        const libraryItems = JSON.parse(row.library_data);
+        res.json({ libraryItems });
+      } catch (e) {
+        res.json({ libraryItems: [] });
+      }
+    } else {
+      res.json({ libraryItems: [] });
+    }
+  });
+});
+
+app.put('/api/library', authenticate, (req, res) => {
+  const { libraryItems } = req.body;
+  const libraryData = JSON.stringify(libraryItems || []);
+  db.run(`
+    INSERT INTO user_library (user_id, library_data, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET
+    library_data = excluded.library_data,
+    updated_at = CURRENT_TIMESTAMP
+  `, [req.user.id, libraryData], (err) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).send('Database error');
+    }
+    res.json({ success: true });
+  });
+});
+
+// --- ADMIN API ---USER MANAGEMENT ROUTES ---
+app.get('/api/users', authenticate, requireAdmin, (req, res) => {
+  db.all('SELECT id, username, role, auth_type FROM users', (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch users' });
+    res.json(rows);
+  });
+});
+
+app.post('/api/users', authenticate, requireAdmin, async (req, res) => {
+  const { username, password, role } = req.body;
+  
+  if (!username || !password || !role) return res.status(400).json({ error: 'Missing fields' });
+  if (role !== 'ADMIN' && role !== 'USER') return res.status(400).json({ error: 'Invalid role' });
+
+  const hash = await bcrypt.hash(password, 10);
+  
+  db.run('INSERT INTO users (username, password_hash, role, auth_type) VALUES (?, ?, ?, ?)', [username, hash, role, 'local'], function(err) {
+    if (err) return res.status(400).json({ error: 'Username might already exist or invalid input' });
+    res.status(201).json({ id: this.lastID, username, role, auth_type: 'local' });
+  });
+});
+
+app.put('/api/users/:id', authenticate, requireAdmin, async (req, res) => {
+  const { username, password, role } = req.body;
+  
+  if (!username || !role) return res.status(400).json({ error: 'Missing fields' });
+  if (role !== 'ADMIN' && role !== 'USER') return res.status(400).json({ error: 'Invalid role' });
+
+  try {
+    // Check if modifying root admin
+    db.get('SELECT username, auth_type FROM users WHERE id = ?', [req.params.id], async (err, row) => {
+      if (err || !row) return res.status(400).json({ error: 'User not found' });
+      
+      let finalRole = role;
+      if (row.username === 'admin' && role !== 'ADMIN') {
+        finalRole = 'ADMIN'; // Force role to stay ADMIN for root user
+      }
+
+      if (password) {
+        const hash = await bcrypt.hash(password, 10);
+        // If OIDC user gets a password, upgrade to oidc_local
+        const newAuthType = row.auth_type === 'oidc' ? 'oidc_local' : row.auth_type;
+        db.run('UPDATE users SET username = ?, password_hash = ?, role = ?, auth_type = ? WHERE id = ?', 
+          [username, hash, finalRole, newAuthType, req.params.id], function(err) {
+          if (err) return res.status(400).json({ error: 'Failed to update user' });
+          res.json({ success: true });
+        });
+      } else {
+        db.run('UPDATE users SET username = ?, role = ? WHERE id = ?', 
+          [username, finalRole, req.params.id], function(err) {
+          if (err) return res.status(400).json({ error: 'Failed to update user' });
+          res.json({ success: true });
+        });
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.delete('/api/users/:id', authenticate, requireAdmin, (req, res) => {
+  db.get('SELECT username FROM users WHERE id = ?', [req.params.id], (err, row) => {
+    if (err || !row) return res.status(400).json({ error: 'User not found' });
+    if (row.username === 'admin') return res.status(403).json({ error: 'Cannot delete the root admin account' });
+
+    db.run('DELETE FROM users WHERE id = ?', [req.params.id], function(err) {
+      if (err) return res.status(500).json({ error: 'Failed to delete user' });
+      res.json({ success: true, changes: this.changes });
+    });
+  });
+});
+
+// --- OIDC CONFIG ROUTES ---
+app.get('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
+  db.get('SELECT * FROM oidc_config WHERE id = 1', (err, row) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch OIDC config' });
+    res.json(row || {});
+  });
+});
+
+app.get('/api/public-oidc-config', (req, res) => {
+  db.get('SELECT enabled, provider_name FROM oidc_config WHERE id = 1', (err, row) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch public OIDC config' });
+    if (!row) {
+      return res.json({ enabled: 0, provider_name: '' });
+    }
+    res.json({ enabled: row.enabled, provider_name: row.provider_name });
+  });
+});
+
+app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
+  const { provider_name, client_id, client_secret, issuer_url, username_claim, enabled } = req.body;
+  const isEnabled = enabled ? 1 : 0;
+  
+  db.run(
+    'UPDATE oidc_config SET provider_name = ?, client_id = ?, client_secret = ?, issuer_url = ?, username_claim = ?, enabled = ? WHERE id = 1',
+    [provider_name, client_id, client_secret, issuer_url, username_claim || 'name', isEnabled],
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Failed to update OIDC config' });
+      res.json({ success: true });
+    }
+  );
+});
+
+// --- OIDC FLOW ROUTES ---
+
+// Helper: auto-generate the redirect_uri from the incoming request
+function getOidcRedirectUri(req) {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${protocol}://${host}/api/auth/oidc/callback`;
+}
+
+// Helper: normalize issuer_url to always return the well-known config URL
+// Handles cases where user pastes the full .well-known URL or just the base issuer URL
+function getWellKnownUrl(issuerUrl) {
+  const trimmed = issuerUrl.replace(/\/+$/, '');
+  if (trimmed.endsWith('/.well-known/openid-configuration')) {
+    return trimmed; // Already the full URL
+  }
+  return `${trimmed}/.well-known/openid-configuration`;
+}
+
+app.get('/api/auth/oidc/login', (req, res) => {
+  db.get('SELECT * FROM oidc_config WHERE id = 1', (err, config) => {
+    if (err || !config || !config.enabled) {
+      return res.status(400).json({ error: 'OIDC is not configured or disabled' });
+    }
+
+    const { issuer_url, client_id } = config;
+    if (!issuer_url || !client_id) {
+      return res.status(400).json({ error: 'Incomplete OIDC config' });
+    }
+
+    const redirect_uri = getOidcRedirectUri(req);
+    
+    fetch(getWellKnownUrl(issuer_url))
+      .then(r => r.json())
+      .then(openIdConfig => {
+        const authUrl = new URL(openIdConfig.authorization_endpoint);
+        authUrl.searchParams.set('response_type', 'code');
+        authUrl.searchParams.set('client_id', client_id);
+        authUrl.searchParams.set('redirect_uri', redirect_uri);
+        authUrl.searchParams.set('scope', 'openid profile email');
+        
+        console.log('[OIDC] Login redirect_uri:', redirect_uri);
+        console.log('[OIDC] Authorization URL:', authUrl.toString());
+        res.redirect(authUrl.toString());
+      })
+      .catch(err => {
+        console.error('Failed to fetch OIDC well-known config:', err);
+        res.status(500).json({ error: 'Failed to initiate OIDC login due to unreachable issuer' });
+      });
+  });
+});
+
+app.get('/api/auth/oidc/callback', (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    return res.status(400).send('Missing authorization code');
+  }
+
+  db.get('SELECT * FROM oidc_config WHERE id = 1', async (err, config) => {
+    if (err || !config || !config.enabled) {
+      return res.status(400).send('OIDC is not configured or disabled');
+    }
+
+    const { issuer_url, client_id, client_secret } = config;
+    const redirect_uri = getOidcRedirectUri(req);
+    const wellKnownUrl = getWellKnownUrl(issuer_url);
+
+    console.log('[OIDC] Callback received. redirect_uri:', redirect_uri);
+    console.log('[OIDC] Well-known URL:', wellKnownUrl);
+
+    try {
+      // 1. Get token endpoint from well-known config
+      const wellKnownRes = await fetch(wellKnownUrl);
+      if (!wellKnownRes.ok) {
+        const text = await wellKnownRes.text();
+        throw new Error(`Well-known config fetch failed (${wellKnownRes.status}): ${text.substring(0, 200)}`);
+      }
+      const openIdConfig = await wellKnownRes.json();
+      console.log('[OIDC] Token endpoint:', openIdConfig.token_endpoint);
+      console.log('[OIDC] Userinfo endpoint:', openIdConfig.userinfo_endpoint);
+      
+      // 2. Exchange code for token
+      const tokenRes = await fetch(openIdConfig.token_endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: client_id,
+          client_secret: client_secret,
+          redirect_uri: redirect_uri
+        })
+      });
+      
+      const tokenText = await tokenRes.text();
+      console.log('[OIDC] Token response status:', tokenRes.status);
+      
+      let tokenData;
+      try {
+        tokenData = JSON.parse(tokenText);
+      } catch (e) {
+        throw new Error(`Token response is not valid JSON: ${tokenText.substring(0, 300)}`);
+      }
+      
+      if (!tokenRes.ok) {
+        throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
+      }
+
+      // 3. Get user info
+      const targetClaim = config.username_claim || 'name';
+      console.log('[OIDC] Token type:', tokenData.token_type, 'access_token prefix:', tokenData.access_token?.substring(0, 20) + '...');
+      console.log('[OIDC] Scopes granted:', tokenData.scope);
+      
+      // Also try decoding the access_token (Authentik's access_token is a JWT with user claims)
+      let accessTokenClaims = null;
+      try {
+        const atParts = tokenData.access_token.split('.');
+        if (atParts.length === 3) {
+          accessTokenClaims = JSON.parse(Buffer.from(atParts[1], 'base64url').toString('utf8'));
+          console.log('[OIDC] access_token JWT claims:', JSON.stringify(accessTokenClaims));
+        }
+      } catch (e) {
+        console.log('[OIDC] access_token is not a decodable JWT');
+      }
+      
+      let userInfo;
+      
+      // Try userinfo endpoint first (standard OIDC approach)
+      try {
+        const userInfoRes = await fetch(openIdConfig.userinfo_endpoint, {
+          headers: {
+            'Authorization': `${tokenData.token_type || 'Bearer'} ${tokenData.access_token}`,
+            'Accept': 'application/json'
+          }
+        });
+        
+        console.log('[OIDC] UserInfo response status:', userInfoRes.status);
+        
+        if (userInfoRes.ok) {
+          const userInfoText = await userInfoRes.text();
+          console.log('[OIDC] UserInfo response body:', userInfoText.substring(0, 500));
+          if (userInfoText) {
+            userInfo = JSON.parse(userInfoText);
+          }
+        } else {
+          console.warn('[OIDC] UserInfo endpoint returned', userInfoRes.status, '- will try id_token');
+        }
+      } catch (e) {
+        console.warn('[OIDC] UserInfo fetch error:', e.message, '- will try id_token');
+      }
+      
+      // Fallback: decode id_token if userinfo didn't work or didn't have the claim we need
+      if (!userInfo || !userInfo[targetClaim]) {
+        if (tokenData.id_token) {
+          try {
+            const parts = tokenData.id_token.split('.');
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            console.log('[OIDC] id_token claims:', JSON.stringify(payload));
+            // Merge: prefer userinfo data, supplement with id_token
+            userInfo = { ...payload, ...(userInfo || {}) };
+          } catch (e) {
+            console.error('[OIDC] Failed to decode id_token:', e.message);
+          }
+        }
+      }
+
+      if (!userInfo) {
+        throw new Error('Could not obtain user information from either userinfo endpoint or id_token');
+      }
+
+      console.log('[OIDC] Final userInfo:', JSON.stringify(userInfo));
+
+      // 4. Map OIDC user to local user
+      // Use the configured username_claim, with fallbacks
+      const claim = config.username_claim || 'name';
+      const username = userInfo[claim] || userInfo.preferred_username || userInfo.name || userInfo.email || userInfo.sub;
+      console.log('[OIDC] Using claim:', claim, '=> username:', username);
+      
+      if (!username) {
+        throw new Error('OIDC provider did not return a usable username. UserInfo: ' + JSON.stringify(userInfo));
+      }
+
+      db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+        if (err) return res.status(500).send('Database error');
+        
+        let localUserId;
+        let localUserRole;
+
+        if (!user) {
+          // Create new user automatically
+          const hash = await bcrypt.hash(Math.random().toString(36).slice(-10), 10);
+          
+          await new Promise((resolve, reject) => {
+            db.run('INSERT INTO users (username, password_hash, role, auth_type) VALUES (?, ?, ?, ?)', [username, hash, 'USER', 'oidc'], function(err) {
+              if (err) reject(err);
+              localUserId = this.lastID;
+              localUserRole = 'USER';
+              resolve();
+            });
+          });
+          console.log('[OIDC] Created new local user:', username, 'id:', localUserId);
+        } else {
+          localUserId = user.id;
+          localUserRole = user.role;
+          console.log('[OIDC] Found existing local user:', username, 'id:', localUserId);
+          
+          if (user.auth_type === 'local') {
+            db.run('UPDATE users SET auth_type = ? WHERE id = ?', ['oidc_local', user.id], err => {
+              if (err) console.error('[OIDC] Failed to upgrade user auth_type:', err);
+              else console.log('[OIDC] Upgraded user auth_type to oidc_local for:', username);
+            });
+          }
+        }
+
+        // 5. Generate local JWT
+        const token = jwt.sign({ id: localUserId, username: username, role: localUserRole }, JWT_SECRET);
+        
+        // 6. Redirect to frontend with token
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+        const host = req.headers['x-forwarded-host'] || req.get('host') || `${req.hostname}:3001`;
+        const frontendBase = `${protocol}://${host}`;
+        const redirectUrl = `${frontendBase}/oidc-callback?token=${token}&username=${encodeURIComponent(username)}&role=${localUserRole}&id=${localUserId}`;
+        console.log('[OIDC] Redirecting to frontend:', redirectUrl);
+        res.redirect(redirectUrl);
+      });
+
+    } catch (err) {
+      console.error('OIDC callback error:', err);
+      res.status(500).send(`Authentication failed: ${err.message}`);
+    }
+  });
+});
+
+// --- CANVAS ROUTES ---
+app.get('/api/canvases', authenticate, (req, res) => {
+  db.all('SELECT id, title, elements, appState, updated_at FROM canvases WHERE user_id = ? ORDER BY updated_at DESC', [req.user.id], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Failed to fetch canvases' });
+    res.json(rows);
+  });
+});
+
+app.post('/api/canvases', authenticate, (req, res) => {
+  const { id, title: providedTitle, elements, appState } = req.body;
+  
+  const insertCanvas = (finalTitle) => {
+    db.run(
+      'INSERT INTO canvases (id, user_id, title, elements, appState) VALUES (?, ?, ?, ?, ?)',
+      [id, req.user.id, finalTitle, JSON.stringify(elements || []), JSON.stringify(appState || {})],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.status(201).json({ id, title: finalTitle });
+      }
+    );
+  };
+
+  if (!providedTitle || providedTitle === 'Untitled' || providedTitle === '__NEW_CANVAS__' || /^\d{14}$/.test(providedTitle)) {
+    db.all("SELECT title FROM canvases WHERE user_id = ? AND title LIKE '新建画板%'", [req.user.id], (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Failed to generate title' });
+      
+      let maxNum = 0;
+      rows.forEach(row => {
+        const match = row.title.match(/^新建画板(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+      insertCanvas(`新建画板${maxNum + 1}`);
+    });
+  } else {
+    insertCanvas(providedTitle);
+  }
+});
+
+// Used by shared/read-only links
+app.get('/api/public/canvases/:id', (req, res) => {
+  db.get('SELECT * FROM canvases WHERE id = ?', [req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Internal server error' });
+    if (!row) return res.status(404).json({ error: 'Canvas not found' });
+    
+    res.json({
+      id: row.id,
+      title: row.title,
+      elements: JSON.parse(row.elements),
+      appState: JSON.parse(row.appState)
+    });
+  });
+});
+
+app.get('/api/canvases/:id', authenticate, (req, res) => {
+  // Allow fetching if they own it (simplified, no sharing for now)
+  db.get('SELECT * FROM canvases WHERE id = ? AND user_id = ?', [req.params.id, req.user.id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Internal server error' });
+    if (!row) return res.status(404).json({ error: 'Canvas not found' });
+    
+    res.json({
+      id: row.id,
+      title: row.title,
+      elements: JSON.parse(row.elements),
+      appState: JSON.parse(row.appState)
+    });
+  });
+});
+
+app.put('/api/canvases/:id', authenticate, (req, res) => {
+  const { title, elements, appState } = req.body;
+  const { id } = req.params;
+
+  db.get('SELECT title FROM canvases WHERE id = ? AND user_id = ?', [id, req.user.id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Failed' });
+    if (!row) return res.status(404).json({ error: 'Not found' });
+
+    let finalTitle = title;
+    if (title === '__NEW_CANVAS__' && row.title && row.title !== '__NEW_CANVAS__') {
+      finalTitle = row.title;
+    }
+
+    db.run(
+      'UPDATE canvases SET title = ?, elements = ?, appState = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+      [finalTitle, JSON.stringify(elements), JSON.stringify(appState), id, req.user.id],
+      function(err) {
+        if (err) return res.status(500).json({ error: 'Failed to update canvas' });
+        res.json({ success: true });
+      }
+    );
+  });
+});
+
+app.put('/api/canvases/:id/title', authenticate, (req, res) => {
+  const { title } = req.body;
+  const { id } = req.params;
+
+  db.run(
+    'UPDATE canvases SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+    [title, id, req.user.id],
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Failed to update canvas title' });
+      if (this.changes === 0) return res.status(404).json({ error: 'Canvas not found or access denied' });
+      res.json({ success: true });
+    }
+  );
+});
+
+app.delete('/api/canvases/:id', authenticate, (req, res) => {
+  const { id } = req.params;
+  
+  db.run('DELETE FROM canvases WHERE id = ? AND user_id = ?', [id, req.user.id], function(err) {
+    if (err) return res.status(500).json({ error: 'Failed to delete canvas' });
+    if (this.changes === 0) return res.status(404).json({ error: 'Canvas not found or access denied' });
+    res.json({ success: true, changes: this.changes });
+  });
+});
+
+const PORT = 8080;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Local backend server running on http://0.0.0.0:${PORT} (LAN reachable)`);
+});

@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { useCallback, useState } from "react";
 
-import { muteFSAbortError } from "@excalidraw/common";
+import { muteFSAbortError, VERSIONS } from "@excalidraw/common";
 
 import { useUIAppState } from "../context/ui-appState";
 import { fileOpen } from "../data/filesystem";
@@ -202,6 +202,24 @@ export const LibraryDropdownMenuButton: React.FC<{
           onSelect={() => setIsLibraryMenuOpen(false)}
           className="library-menu"
         >
+          <DropdownMenu.Item
+            onSelect={() => {
+              const referrer = window.location.origin + window.location.pathname;
+              window.open(
+                `${import.meta.env.VITE_APP_LIBRARY_URL}?target=${
+                  window.name || "_blank"
+                }&referrer=${referrer}&useHash=true&token=${(appState as any).id || ""}&theme=${appState.theme}&version=${
+                  VERSIONS.excalidrawLibrary
+                }`,
+                "_excalidraw_libraries"
+              );
+            }}
+            data-testid="lib-dropdown--browse"
+            icon={LoadIcon}
+          >
+            {t("labels.libraries")}
+          </DropdownMenu.Item>
+
           {!itemsSelected && (
             <DropdownMenu.Item
               onSelect={onLibraryImport}

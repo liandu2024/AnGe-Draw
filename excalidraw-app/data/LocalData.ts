@@ -45,6 +45,7 @@ import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { Locker } from "./Locker";
 import { updateBrowserStateVersion } from "./tabSync";
+import axios from 'axios';
 
 const filesStore = createStore("files-db", "files-store");
 
@@ -129,9 +130,92 @@ export class LocalData {
         files,
       });
       onFilesSaved();
+
+      // Sync to the backend if logged in and looking at a valid canvas ID
+      try {
+        await this.forceSyncToBackend(elements, appState);
+      } catch (e) {
+        console.error("Failed to sync canvas to backend", e);
+      }
     },
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   );
+
+  static async forceSyncToBackend(elements?: readonly ExcalidrawElement[], appState?: AppState, explicitCanvasId?: string) {
+    console.log("[forceSyncToBackend] Starting sync", { elementsLength: elements?.length, explicitCanvasId });
+    let currentElements = elements;
+    let currentAppState = appState;
+    
+    if (!currentElements || !currentAppState) {
+      console.log("[forceSyncToBackend] Missing elements or appState, trying to read from localStorage");
+      const storedElements = localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS);
+      const storedAppState = localStorage.getItem(STORAGE_KEYS.LOCAL_STORAGE_APP_STATE);
+      if (storedElements && storedAppState) {
+        try {
+          currentElements = JSON.parse(storedElements);
+          currentAppState = JSON.parse(storedAppState);
+          console.log("[forceSyncToBackend] Parsed localStorage elements length:", currentElements?.length);
+        } catch (e) {
+          console.error("[forceSyncToBackend] Failed to parse local storage for force sync", e);
+          return;
+        }
+      } else {
+        console.warn("[forceSyncToBackend] Nothing in localStorage either, aborting sync.");
+        return;
+      }
+    }
+
+    let canvasId = explicitCanvasId;
+    if (!canvasId) {
+      const urlParams = new URLSearchParams(window.location.search);
+      canvasId = urlParams.get('id') || undefined;
+      if (!canvasId) {
+        const pathParts = window.location.pathname.split('/');
+        if (pathParts[1] === 'canvas' && pathParts[2]) {
+            canvasId = pathParts[2];
+        }
+      }
+    }
+    console.log("[forceSyncToBackend] Determined canvasId:", canvasId);
+
+    const token = localStorage.getItem('token');
+    if (!token) console.warn("[forceSyncToBackend] No token found in localStorage.");
+
+    if (canvasId && token && currentElements && currentAppState) {
+        const titleToSync = (!document.title || document.title === 'Excalidraw Whiteboard' || document.title === 'Untitled' || document.title === '新建画板') ? '__NEW_CANVAS__' : document.title;
+        
+        try {
+          console.log(`[forceSyncToBackend] Attempting PUT to /api/canvases/${canvasId}`);
+          await axios.put(`/api/canvases/${canvasId}`, {
+                title: titleToSync,
+            elements: currentElements,
+            appState: clearAppStateForLocalStorage(currentAppState as AppState)
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          console.log("[forceSyncToBackend] Successfully UPDATED canvas via PUT");
+        } catch (err: any) {
+          console.log("[forceSyncToBackend] PUT failed", err?.response?.status);
+          if(err.response?.status === 404) {
+            console.log(`[forceSyncToBackend] Canvas 404. Attempting POST to create it...`);
+            // Canvas doesn't exist, create it
+            try {
+              await axios.post('/api/canvases', {
+                id: canvasId,
+                    title: titleToSync,
+                elements: currentElements,
+                appState: clearAppStateForLocalStorage(currentAppState as AppState)
+              }, { headers: { Authorization: `Bearer ${token}` }});
+              console.log("[forceSyncToBackend] Successfully CREATED canvas via POST");
+            } catch (postErr) {
+              console.error("[forceSyncToBackend] POST failed too", postErr);
+            }
+          }
+        }
+    } else {
+      console.warn("[forceSyncToBackend] Aborted sync condition not met:", { hasCanvasId: !!canvasId, hasToken: !!token, hasElements: !!currentElements, hasAppState: !!currentAppState });
+    }
+  }
 
   /** Saves DataState, including files. Bails if saving is paused */
   static save = (

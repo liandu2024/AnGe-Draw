@@ -124,7 +124,11 @@
 
   .sidebar-tabs-root > .sidebar__header {
     padding-top: 0;
-    padding-bottom: 1rem;
+    padding-bottom: 0.5rem;
+
+    &::after {
+      display: none;
+    }
   }
 
   .sidebar-tab-trigger {

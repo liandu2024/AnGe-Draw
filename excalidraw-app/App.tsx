@@ -47,6 +47,7 @@ import {
   exportToPlus,
   share,
   youtubeIcon,
+  TrashIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { isElementLink } from "@excalidraw/element";
 import {
@@ -150,6 +151,14 @@ import { AppSidebar } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
 
+import { AuthProvider, useAuth } from './components/AuthContext';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { Login } from './components/Login';
+import { AdminPanel } from './components/AdminPanel';
+import { OidcCallback } from './components/OidcCallback';
+import { nanoid } from 'nanoid';
+
 polyfill();
 
 window.EXCALIDRAW_THROTTLE_RENDER = true;
@@ -223,13 +232,51 @@ const initializeScene = async (opts: {
   )
 > => {
   const searchParams = new URLSearchParams(window.location.search);
-  const id = searchParams.get("id");
+  let id = searchParams.get("id");
   const jsonBackendMatch = window.location.hash.match(
     /^#json=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/,
   );
+  
+  // Custom router logic check for canvas loading
+  const pathParts = window.location.pathname.split('/');
+  const isShared = pathParts[1] === 'shared';
+  if ((pathParts[1] === 'canvas' || isShared) && pathParts[2]) {
+    id = pathParts[2];
+  }
+
   const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
 
-  const localDataState = importFromLocalStorage();
+  let localDataState = importFromLocalStorage();
+  const token = localStorage.getItem('token');
+  
+  // Try fetching from our custom backend if an ID is present
+  if (id) {
+    try {
+      const endpoint = isShared ? `/api/public/canvases/${id}` : `/api/canvases/${id}`;
+      const headers: Record<string, string> = {};
+      if (!isShared && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
+      const res = await window.fetch(endpoint, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.elements) {
+           localDataState = {
+             elements: data.elements,
+             appState: data.appState || localDataState?.appState
+           } as any;
+        }
+      } else if (res.status === 404) {
+        // If it's a new ID that doesn't exist on the server, start blank!
+        // Otherwise Excalidraw's default behavior restores localStorage from the last opened canvas
+        // and we end up saving duplicates!
+        localDataState = { elements: [], appState: {} } as any;
+      }
+    } catch (e) {
+      console.error("Failed to fetch initial canvas state from backend", e);
+    }
+  }
 
   let scene: Omit<
     RestoredDataState,
@@ -255,6 +302,7 @@ const initializeScene = async (opts: {
       // don't prompt for collab scenes because we don't override local storage
       roomLinkData ||
       // otherwise, prompt whether user wants to override current scene
+      true || // BYPASS: we always want to load our backend canvas and override local!
       (await openConfirmModal(shareableLinkConfirmDialog))
     ) {
       if (jsonBackendMatch) {
@@ -281,7 +329,7 @@ const initializeScene = async (opts: {
       }
       scene.scrollToContent = true;
       if (!roomLinkData) {
-        window.history.replaceState({}, APP_NAME, window.location.origin);
+        window.history.replaceState({}, APP_NAME, window.location.origin + window.location.pathname);
       }
     } else {
       // https://github.com/excalidraw/excalidraw/issues/1919
@@ -298,10 +346,10 @@ const initializeScene = async (opts: {
       }
 
       roomLinkData = null;
-      window.history.replaceState({}, APP_NAME, window.location.origin);
+      window.history.replaceState({}, APP_NAME, window.location.origin + window.location.pathname);
     }
   } else if (externalUrlMatch) {
-    window.history.replaceState({}, APP_NAME, window.location.origin);
+    window.history.replaceState({}, APP_NAME, window.location.origin + window.location.pathname);
 
     const url = externalUrlMatch[1];
     try {
@@ -371,10 +419,46 @@ const initializeScene = async (opts: {
   return { scene: null, isExternalScene: false };
 };
 
-const ExcalidrawWrapper = () => {
+const CloudLibraryAdapter = {
+  load: async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return { libraryItems: [] };
+      const res = await axios.get('/api/library', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.data && res.data.libraryItems) {
+        return { libraryItems: res.data.libraryItems };
+      }
+    } catch (e) {
+      console.error('Failed to load cloud library', e);
+    }
+    return { libraryItems: [] };
+  },
+  save: async (libraryData: any) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      
+      let libraryItems = [];
+      if (Array.isArray(libraryData)) {
+        libraryItems = libraryData;
+      } else if (libraryData && libraryData.libraryItems) {
+        libraryItems = libraryData.libraryItems;
+      }
+
+      await axios.put('/api/library', { libraryItems }, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (e) {
+      console.error('Failed to save cloud library', e);
+    }
+  }
+};
+
+const ExcalidrawWrapper = ({ isShared }: { isShared?: boolean }) => {
   const excalidrawAPI = useExcalidrawAPI();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [errorMessage, setErrorMessage] = useState("");
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const isCollabDisabled = isRunningInIframe();
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
@@ -413,7 +497,7 @@ const ExcalidrawWrapper = () => {
 
   useHandleLibrary({
     excalidrawAPI,
-    adapter: LibraryIndexedDBAdapter,
+    adapter: CloudLibraryAdapter,
     // TODO maybe remove this in several months (shipped: 24-03-11)
     migrationAdapter: LibraryLocalStorageMigrationAdapter,
   });
@@ -574,7 +658,7 @@ const ExcalidrawWrapper = () => {
             ...localDataState,
             captureUpdate: CaptureUpdateAction.NEVER,
           });
-          LibraryIndexedDBAdapter.load().then((data) => {
+          CloudLibraryAdapter.load().then((data) => {
             if (data) {
               excalidrawAPI.updateLibrary({
                 libraryItems: data.libraryItems,
@@ -914,6 +998,7 @@ const ExcalidrawWrapper = () => {
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
         onPointerUpdate={collabAPI?.onPointerUpdate}
+        viewModeEnabled={isShared}
         UIOptions={{
           canvasActions: {
             toggleTheme: true,
@@ -953,6 +1038,7 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         renderTopRightUI={(isMobile) => {
+          if (isShared) return null;
           if (isMobile || !collabAPI || isCollabDisabled) {
             return null;
           }
@@ -960,9 +1046,14 @@ const ExcalidrawWrapper = () => {
           return (
             <div className="excalidraw-ui-top-right">
               {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
+                <button
+                  className="PromoBanner"
+                  style={{ cursor: "pointer", background: "var(--color-primary-light)", color: "var(--color-primary-dark)", border: "none", padding: "0 12px", borderRadius: "10px", fontWeight: "bold", fontSize: "14px", height: "100%", whiteSpace: "nowrap", marginLeft: "8px" }}
+                  onClick={() => setIsAdminModalOpen(true)}
+                  title="账号信息"
+                >
+                 {user?.username || '账号管理'}
+                </button>
               )}
 
               {collabError.message && <CollabError collabError={collabError} />}
@@ -984,12 +1075,14 @@ const ExcalidrawWrapper = () => {
         }}
       >
         <AppMainMenu
+          excalidrawAPI={excalidrawAPI}
           onCollabDialogOpen={onCollabDialogOpen}
           isCollaborating={isCollaborating}
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           setTheme={(theme) => setAppTheme(theme)}
           refresh={() => forceRefresh((prev) => !prev)}
+          isShared={isShared}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
@@ -1015,7 +1108,7 @@ const ExcalidrawWrapper = () => {
             </OverwriteConfirmDialog.Action>
           )}
         </OverwriteConfirmDialog>
-        <AppFooter onChange={() => excalidrawAPI?.refresh()} />
+        <AppFooter onChange={() => excalidrawAPI?.refresh()} isShared={isShared} />
         {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
 
         <TTDDialogTrigger />
@@ -1041,17 +1134,35 @@ const ExcalidrawWrapper = () => {
         )}
 
         <ShareDialog
-          collabAPI={collabAPI}
+          collabAPI={null} // Disables "Start Session" button
           onExportToBackend={async () => {
-            if (excalidrawAPI) {
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts[1] === 'canvas' && pathParts[2]) {
+              const sharedLink = `${window.location.origin}/shared/${pathParts[2]}`;
               try {
-                await onExportToBackend(
-                  excalidrawAPI.getSceneElements(),
-                  excalidrawAPI.getAppState(),
-                  excalidrawAPI.getFiles(),
-                );
-              } catch (error: any) {
-                setErrorMessage(error.message);
+                if (navigator.clipboard && window.isSecureContext) {
+                  await navigator.clipboard.writeText(sharedLink);
+                  excalidrawAPI?.setToast({ message: "已复制只读分享链接到剪贴板！可发给任何人浏览。", duration: 3000 });
+                } else {
+                  // Fallback for non-HTTPS environments (e.g. LAN IPs)
+                  const textArea = document.createElement("textarea");
+                  textArea.value = sharedLink;
+                  textArea.style.top = "0";
+                  textArea.style.left = "0";
+                  textArea.style.position = "fixed";
+                  document.body.appendChild(textArea);
+                  textArea.focus();
+                  textArea.select();
+                  const successful = document.execCommand('copy');
+                  document.body.removeChild(textArea);
+                  if (successful) {
+                    excalidrawAPI?.setToast({ message: "已复制只读分享链接到剪贴板！可发给任何人浏览。", duration: 3000 });
+                  } else {
+                    throw new Error("Fallback copy failed");
+                  }
+                }
+              } catch (e) {
+                window.prompt("剪贴板权限受限，请手动复制以下防篡改只读链接：", sharedLink);
               }
             }
           }}
@@ -1262,8 +1373,118 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
+
+      {isAdminModalOpen && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 999999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setIsAdminModalOpen(false)}>
+          <div style={{ position: "relative", background: "var(--island-bg-color, white)", borderRadius: "8px", padding: "0", width: "75vw", maxWidth: "700px", maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column", border: "1px solid var(--color-gray-20)", boxShadow: "none" }} onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setIsAdminModalOpen(false)} 
+              style={{ position: "absolute", top: "16px", right: "16px", zIndex: 10, background: "none", border: "none", fontSize: "28px", cursor: "pointer", color: "#868e96", padding: "12px", lineHeight: 1 }}
+            >×</button>
+            <div style={{ padding: "0", marginTop: "0", flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <AdminPanel />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+};
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div>Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
+const CanvasHeader = ({ canvasId }: { canvasId: string }) => {
+  const [title, setTitle] = useState('新建画板');
+
+  useEffect(() => {
+    if (canvasId) {
+      axios.get(`/api/canvases/${canvasId}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then(res => {
+          if (res.data && res.data.title !== 'Untitled') {
+            setTitle(res.data.title);
+            document.title = res.data.title;
+          }
+        })
+        .catch(console.error);
+    }
+  }, [canvasId]);
+
+  useEffect(() => {
+    const handleTitleUpdate = (e: any) => {
+      if (e.detail && e.detail.title) {
+        setTitle(e.detail.title);
+      }
+    };
+    window.addEventListener('canvasTitleUpdated', handleTitleUpdate);
+    return () => window.removeEventListener('canvasTitleUpdated', handleTitleUpdate);
+  }, []);
+
+  const handleSaveTitle = async () => {
+    if (!canvasId) return;
+    try {
+      await axios.put(`/api/canvases/${canvasId}/title`, { title }, {
+         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      document.title = title;
+    } catch (e) {
+      console.error('Failed to auto-save title', e);
+    }
+  };
+
+  return (
+    <div style={{ position: "absolute", top: "15px", left: "64px", zIndex: 1000, display: "flex", alignItems: "center", background: "white", padding: "0 12px", height: "36px", borderRadius: "8px", border: "1px solid #e5e5e5", boxSizing: "border-box", maxWidth: "clamp(100px, calc(50vw - 360px), 250px)", overflow: "hidden" }}>
+      <input 
+        value={title} 
+        onChange={e => setTitle(e.target.value)}
+        onBlur={handleSaveTitle}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          }
+        }}
+        style={{ border: "none", outline: "none", fontSize: "14px", fontWeight: "bold", width: "100%", color: "var(--text-primary-color)", background: "transparent", margin: 0, padding: 0, lineHeight: 1, textOverflow: "ellipsis" }}
+        placeholder="输入标题..."
+      />
+    </div>
+  );
+};
+
+const CanvasRoute = () => {
+  const { id } = useParams();
+  return (
+    <>
+      {id && <CanvasHeader canvasId={id} />}
+      <ExcalidrawWrapper key={id} />
+    </>
+  );
+};
+
+const RedirectToLastCanvas = () => {
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    axios.get('/api/canvases', { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        if (res.data && res.data.length > 0) {
+          // Canvases are returned sorted by updated_at DESC from backend
+          setRedirectTo(`/canvas/${res.data[0].id}`);
+        } else {
+          setRedirectTo(`/canvas/${nanoid()}`);
+        }
+      })
+      .catch(() => {
+        setRedirectTo(`/canvas/${nanoid()}`);
+      });
+  }, []);
+
+  if (!redirectTo) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>Redirecting...</div>;
+  return <Navigate to={redirectTo} replace />;
 };
 
 const ExcalidrawApp = () => {
@@ -1276,9 +1497,29 @@ const ExcalidrawApp = () => {
   return (
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
-        <ExcalidrawAPIProvider>
-          <ExcalidrawWrapper />
-        </ExcalidrawAPIProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/oidc-callback" element={<OidcCallback />} />
+              <Route path="/" element={<ProtectedRoute><RedirectToLastCanvas /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+              <Route path="/canvas/:id" element={
+                <ProtectedRoute>
+                  <ExcalidrawAPIProvider>
+                    <CanvasRoute />
+                  </ExcalidrawAPIProvider>
+                </ProtectedRoute>
+              } />
+              <Route path="/shared/:id" element={
+                <ExcalidrawAPIProvider>
+                  <ExcalidrawWrapper isShared={true} />
+                </ExcalidrawAPIProvider>
+              } />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
       </Provider>
     </TopErrorBoundary>
   );

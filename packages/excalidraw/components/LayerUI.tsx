@@ -61,6 +61,7 @@ import { Island } from "./Island";
 import { JSONExportDialog } from "./JSONExportDialog";
 import { LaserPointerButton } from "./LaserPointerButton";
 import { Toast } from "./Toast";
+import { LibraryImportDialog } from "./LibraryImportDialog";
 
 import "./LayerUI.scss";
 import "./Toolbar.scss";
@@ -566,6 +567,13 @@ const LayerUI = ({
               openDialog: null,
             })
           }
+        />
+      )}
+      {appState.openDialog?.name === "libraryImport" && (
+        <LibraryImportDialog
+          app={app}
+          items={appState.openDialog.items}
+          onClose={() => setAppState({ openDialog: null })}
         />
       )}
       {editorInterface.formFactor === "phone" && (
