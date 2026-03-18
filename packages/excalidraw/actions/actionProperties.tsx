@@ -1532,50 +1532,36 @@ export const actionChangeRoundness = register<"sharp" | "round" | { type: "round
     );
 
     const sliderValue = targetElements.length > 0 
-      ? targetElements[0].roundness?.value ?? 32 
-      : 32;
+      ? (targetElements[0].roundness?.value ?? (targetElements[0].roundness ? 32 : 0))
+      : (appState.currentItemRoundness === "round" ? 32 : 0);
 
     return (
       <fieldset>
         <legend>{t("labels.edges")}</legend>
-        <div className="buttonList">
-          <RadioSelection
-            group="edges"
-            options={[
-              {
-                value: "sharp",
-                text: t("labels.sharp"),
-                icon: EdgeSharpIcon,
-              },
-              {
-                value: "round",
-                text: t("labels.round"),
-                icon: EdgeRoundIcon,
-              },
-            ]}
-            value={roundnessState}
-            onChange={(value) => updateData(value)}
-          />
+        <div style={{ marginTop: "0.2rem", paddingLeft: "2px", paddingRight: "2px" }}>
+          <label className="control-label" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={sliderValue}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (val === 0) {
+                  updateData("sharp");
+                } else {
+                  updateData({ type: "round", value: val });
+                }
+              }}
+              style={{ flexGrow: 1, height: "4px", accentColor: "var(--color-primary)" }}
+            />
+            <span style={{ fontSize: "0.8rem", width: "20px", textAlign: "right" }}>{Math.round(sliderValue)}</span>
+          </label>
+        </div>
+        <div className="buttonList" style={{ marginTop: "0.5rem" }}>
           {renderAction("togglePolygon")}
         </div>
-        
-        {roundnessState === "round" && (
-          <div style={{ marginTop: "0.2rem", paddingLeft: "2px", paddingRight: "2px" }}>
-            <label className="control-label" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "0.8rem" }}>圆角幅度</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={sliderValue}
-                onChange={(e) => updateData({ type: "round", value: Number(e.target.value) })}
-                style={{ flexGrow: 1, height: "4px", accentColor: "var(--color-primary)" }}
-              />
-              <span style={{ fontSize: "0.8rem", width: "20px", textAlign: "right" }}>{Math.round(sliderValue)}</span>
-            </label>
-          </div>
-        )}
       </fieldset>
     );
   },

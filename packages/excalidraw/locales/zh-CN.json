@@ -33,7 +33,7 @@
     "sloppiness": "线条风格",
     "opacity": "透明度",
     "textAlign": "文本对齐",
-    "edges": "边角",
+    "edges": "边角幅度",
     "sharp": "尖锐",
     "round": "圆润",
     "arrowheads": "端点",
