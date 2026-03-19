@@ -230,15 +230,34 @@ app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
 
 // --- OIDC FLOW ROUTES ---
 
-// Helper: auto-generate the redirect_uri from the incoming request
-// If FRONTEND_URL is set (e.g. "https://angedraw.ok1248.cn:4433"), use it directly.
-// This is necessary when running behind a reverse proxy that doesn't forward X-Forwarded headers.
+// Helper: detect the real public URL for OIDC redirect_uri.
+// Works automatically behind a reverse proxy without any extra config:
+// Priority 1: X-Forwarded-Proto + X-Forwarded-Host (standard reverse proxy headers)
+// Priority 2: Referer header — browser sends the page URL it came from (e.g. https://draw.abc.com/login)
+// Priority 3: FRONTEND_URL env var (explicit override)
+// Priority 4: Fallback to raw host from request
 function getOidcRedirectUri(req) {
+  // 1. X-Forwarded headers (works if Nginx sends them)
+  if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-host']) {
+    const protocol = req.headers['x-forwarded-proto'].split(',')[0].trim();
+    const host = req.headers['x-forwarded-host'].split(',')[0].trim();
+    return `${protocol}://${host}/api/auth/oidc/callback`;
+  }
+  // 2. Referer header — browser automatically sends the originating page URL
+  const referer = req.headers['referer'] || req.headers['referrer'];
+  if (referer) {
+    try {
+      const url = new URL(referer);
+      return `${url.protocol}//${url.host}/api/auth/oidc/callback`;
+    } catch (e) { /* ignore parse error */ }
+  }
+  // 3. Explicit FRONTEND_URL env var
   if (process.env.FRONTEND_URL) {
     return `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api/auth/oidc/callback`;
   }
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.get('host');
+  // 4. Fallback: derive from request itself
+  const protocol = req.protocol || 'http';
+  const host = req.get('host');
   return `${protocol}://${host}/api/auth/oidc/callback`;
 }
 
