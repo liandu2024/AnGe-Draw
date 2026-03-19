@@ -237,28 +237,53 @@ app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
 // Priority 3: FRONTEND_URL env var (explicit override)
 // Priority 4: Fallback to raw host from request
 function getOidcRedirectUri(req) {
+  console.log('[OIDC Debug] Incoming request headers for redirectURI:', JSON.stringify({
+    'x-forwarded-proto': req.headers['x-forwarded-proto'],
+    'x-forwarded-host': req.headers['x-forwarded-host'],
+    'referer': req.headers['referer'] || req.headers['referrer'],
+    'host': req.get('host'),
+    'protocol': req.protocol
+  }));
+
   // 1. X-Forwarded headers (works if Nginx sends them)
   if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-host']) {
     const protocol = req.headers['x-forwarded-proto'].split(',')[0].trim();
     const host = req.headers['x-forwarded-host'].split(',')[0].trim();
-    return `${protocol}://${host}/api/auth/oidc/callback`;
+    const uri = `${protocol}://${host}/api/auth/oidc/callback`;
+    console.log('[OIDC Debug] Using X-Forwarded headers:', uri);
+    return uri;
   }
   // 2. Referer header — browser automatically sends the originating page URL
   const referer = req.headers['referer'] || req.headers['referrer'];
   if (referer) {
     try {
       const url = new URL(referer);
-      return `${url.protocol}//${url.host}/api/auth/oidc/callback`;
-    } catch (e) { /* ignore parse error */ }
+      const uri = `${url.protocol}//${url.host}/api/auth/oidc/callback`;
+      console.log('[OIDC Debug] Using Referer header:', uri);
+      return uri;
+    } catch (e) {
+      console.log('[OIDC Debug] Failed to parse referer:', referer);
+    }
   }
   // 3. Explicit FRONTEND_URL env var
   if (process.env.FRONTEND_URL) {
-    return `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api/auth/oidc/callback`;
+    const uri = `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api/auth/oidc/callback`;
+    console.log('[OIDC Debug] Using FRONTEND_URL env var:', uri);
+    return uri;
   }
   // 4. Fallback: derive from request itself
-  const protocol = req.protocol || 'http';
+  // Force https if host is not localhost and we didn't get a protocol from elsewhere,
+  // because reverse proxies often talk to the backend over HTTP even if the outer is HTTPS.
+  let protocol = req.protocol || 'http';
   const host = req.get('host');
-  return `${protocol}://${host}/api/auth/oidc/callback`;
+  if (host && host.includes('ok1248.cn') && protocol === 'http') {
+     console.log('[OIDC Debug] Coercing protocol to https based on hostname ok1248.cn');
+     protocol = 'https';
+  }
+
+  const uri = `${protocol}://${host}/api/auth/oidc/callback`;
+  console.log('[OIDC Debug] Using request host/protocol fallback:', uri);
+  return uri;
 }
 
 // Helper: normalize issuer_url to always return the well-known config URL
@@ -322,18 +347,23 @@ app.get('/api/auth/oidc/callback', (req, res) => {
     const { issuer_url, client_id, client_secret } = config;
     // Decode redirect_uri from state (set during login) so both sides match exactly
     let redirect_uri = getOidcRedirectUri(req); // fallback
+    let decodedState = false;
     try {
       const stateParam = req.query.state;
       if (stateParam) {
         const stateObj = JSON.parse(Buffer.from(stateParam, 'base64url').toString());
-        if (stateObj.redirect_uri) redirect_uri = stateObj.redirect_uri;
+        if (stateObj.redirect_uri) {
+           redirect_uri = stateObj.redirect_uri;
+           decodedState = true;
+           console.log('[OIDC Debug] Successfully decoded state redirect_uri:', redirect_uri);
+        }
       }
     } catch (e) {
       console.warn('[OIDC] Could not decode state param, using fallback redirect_uri');
     }
     const wellKnownUrl = getWellKnownUrl(issuer_url);
 
-    console.log('[OIDC] Callback received. redirect_uri:', redirect_uri);
+    console.log('[OIDC] Callback received. Final redirect_uri used for token exchange:', redirect_uri, 'Decoded from state?', decodedState);
     console.log('[OIDC] Well-known URL:', wellKnownUrl);
 
     try {
