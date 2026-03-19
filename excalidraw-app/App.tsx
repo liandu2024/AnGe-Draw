@@ -279,19 +279,16 @@ const initializeScene = async (opts: {
     }
   }
 
-  let scene: Omit<
-    RestoredDataState,
-    // we're not storing files in the scene database/localStorage, and instead
-    // fetch them async from a different store
-    "files"
-  > & {
+  let scene: Omit<RestoredDataState, "files"> & {
     scrollToContent?: boolean;
+    files?: any;
   } = {
     elements: restoreElements(localDataState?.elements, null, {
       repairBindings: true,
       deleteInvisibleElements: true,
     }),
     appState: restoreAppState(localDataState?.appState, null),
+    files: (localDataState as any)?.files,
   };
 
   let roomLinkData = getCollaborationLinkData(window.location.href);
