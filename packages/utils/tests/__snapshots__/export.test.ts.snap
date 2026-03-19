@@ -92,6 +92,7 @@ exports[`exportToSvg > with default arguments 1`] = `
   "selectedElementsAreBeingDragged": false,
   "selectedGroupIds": {},
   "selectedLinearElement": null,
+  "selectedShapeActionsCollapsed": false,
   "selectionElement": null,
   "shouldCacheIgnoreZoom": false,
   "showHyperlinkPopup": false,

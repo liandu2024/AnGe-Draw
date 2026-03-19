@@ -415,8 +415,10 @@ describe("Test Linear Elements", () => {
         h.state,
       );
 
-      // update roundness
-      fireEvent.click(screen.getByTitle("Round"));
+      // update roundness directly because UI was changed to a slider
+      act(() => {
+        h.app.scene.mutateElement(line, { roundness: { type: ROUNDNESS.PROPORTIONAL_RADIUS } });
+      });
 
       expect(renderInteractiveScene.mock.calls.length).toMatchInlineSnapshot(
         `10`,

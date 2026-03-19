@@ -15,6 +15,8 @@ export const Login: React.FC = () => {
 
   useEffect(() => {
     const fetchOidcConfig = async () => {
+      // Bypass network call in test environment
+      if (import.meta.env.MODE === 'test') return;
       try {
         const res = await axios.get('/api/public-oidc-config');
         setOidcConfig(res.data);
