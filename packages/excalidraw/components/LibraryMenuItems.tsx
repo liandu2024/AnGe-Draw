@@ -417,10 +417,8 @@ export default function LibraryMenuItems({
   const JSX_whenNotSearching = !IS_SEARCHING && (
     <>
       <DefaultSidebar.TabTriggers>
-        <div style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-          {/* Spacer to balance the flex if necessary, or just rely on margin auto */}
-          <div style={{ width: "3.5rem" }} />
-          <div className="library-tabs" style={{ margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "flex-start", gap: "0.5rem", paddingLeft: "0.5rem" }}>
+          <div className="library-tabs" style={{ margin: 0 }}>
             <div className="library-tabs-container">
               <button
                 className={activeTab === "excalidraw" ? "active" : ""}
@@ -436,7 +434,7 @@ export default function LibraryMenuItems({
               </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "0.25rem", marginRight: "1rem" }}>
+          <div style={{ display: "flex", gap: "0.25rem" }}>
             <button 
               onClick={handleToggleExpandAll}
               title={isAllExpanded ? "全部收缩" : "全部展开"}
@@ -540,6 +538,7 @@ export default function LibraryMenuItems({
                         <div
                           className="library-menu-items-container__header"
                           style={{
+                            width: "100%",
                             fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
                             display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
                             marginBottom: isExpanded ? "0.25rem" : "0", position: "relative"
@@ -632,6 +631,7 @@ export default function LibraryMenuItems({
                         <div
                           className="library-menu-items-container__header"
                           style={{
+                            width: "100%",
                             fontSize: "0.85rem", padding: "0.25rem 0", color: "var(--color-primary-darker)",
                             display: "flex", justifyContent: "flex-start", alignItems: "center", cursor: "pointer", gap: "0.25rem",
                             marginBottom: isExpanded ? "0.25rem" : "0"
