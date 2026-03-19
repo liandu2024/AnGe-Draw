@@ -28,23 +28,18 @@ touch server/excalidraw.db
 ### 2. 启动服务
 
 **方案 A: 使用 Docker Compose (推荐)**
-在包含 `docker-compose.yml` 配置文件的当前目录（即项目根目录）运行：
+直接使用预构建好的镜像，无需本地编译。在当前目录运行：
 ```bash
-docker-compose up -d --build
+docker-compose up -d
 ```
 
 **方案 B: 使用原生 Docker Run**
-如果您没有安装 Docker Compose，也可以直接构建并运行单体容器：
 ```bash
-# 构建镜像
-docker build -t ange-draw:latest .
-
-# 运行容器 (将本机的 8080 端口映射到容器，挂载刚才创建的数据库)
 docker run -d \
   -p 8080:8080 \
   -v $(pwd)/server/excalidraw.db:/app/server/excalidraw.db \
   --name ange-draw \
-  ange-draw:latest
+  ghcr.io/liandu2024/ange-draw:latest
 ```
 
 ### 3. 开始使用

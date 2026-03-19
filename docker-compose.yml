@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   ange-draw:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/liandu2024/ange-draw:latest
+    # 如果需要本地构建，请取消注释下一行
+    # build: .
     container_name: ange-draw
     ports:
       - "8080:8080"
