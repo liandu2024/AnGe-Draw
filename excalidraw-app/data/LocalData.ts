@@ -133,7 +133,7 @@ export class LocalData {
 
       // Sync to the backend if logged in and looking at a valid canvas ID
       try {
-        await this.forceSyncToBackend(elements, appState);
+        await this.forceSyncToBackend(elements, appState, files);
       } catch (e) {
         console.error("Failed to sync canvas to backend", e);
       }
@@ -141,10 +141,11 @@ export class LocalData {
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   );
 
-  static async forceSyncToBackend(elements?: readonly ExcalidrawElement[], appState?: AppState, explicitCanvasId?: string) {
+  static async forceSyncToBackend(elements?: readonly ExcalidrawElement[], appState?: AppState, files?: BinaryFiles, explicitCanvasId?: string) {
     console.log("[forceSyncToBackend] Starting sync", { elementsLength: elements?.length, explicitCanvasId });
     let currentElements = elements;
     let currentAppState = appState;
+    let currentFiles = files;
     
     if (!currentElements || !currentAppState) {
       console.log("[forceSyncToBackend] Missing elements or appState, trying to read from localStorage");
@@ -189,7 +190,8 @@ export class LocalData {
           await axios.put(`/api/canvases/${canvasId}`, {
                 title: titleToSync,
             elements: currentElements,
-            appState: clearAppStateForLocalStorage(currentAppState as AppState)
+            appState: clearAppStateForLocalStorage(currentAppState as AppState),
+            files: currentFiles || {}
           }, {
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -204,7 +206,8 @@ export class LocalData {
                 id: canvasId,
                     title: titleToSync,
                 elements: currentElements,
-                appState: clearAppStateForLocalStorage(currentAppState as AppState)
+                appState: clearAppStateForLocalStorage(currentAppState as AppState),
+                files: currentFiles || {}
               }, { headers: { Authorization: `Bearer ${token}` }});
               console.log("[forceSyncToBackend] Successfully CREATED canvas via POST");
             } catch (postErr) {

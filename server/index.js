@@ -575,12 +575,12 @@ app.get('/api/canvases', authenticate, (req, res) => {
 });
 
 app.post('/api/canvases', authenticate, (req, res) => {
-  const { id, title: providedTitle, elements, appState } = req.body;
+  const { id, title: providedTitle, elements, appState, files } = req.body;
   
   const insertCanvas = (finalTitle) => {
     db.run(
-      'INSERT INTO canvases (id, user_id, title, elements, appState) VALUES (?, ?, ?, ?, ?)',
-      [id, req.user.id, finalTitle, JSON.stringify(elements || []), JSON.stringify(appState || {})],
+      'INSERT INTO canvases (id, user_id, title, elements, appState, files) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, req.user.id, finalTitle, JSON.stringify(elements || []), JSON.stringify(appState || {}), JSON.stringify(files || {})],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.status(201).json({ id, title: finalTitle });
@@ -617,7 +617,8 @@ app.get('/api/public/canvases/:id', (req, res) => {
       id: row.id,
       title: row.title,
       elements: JSON.parse(row.elements),
-      appState: JSON.parse(row.appState)
+      appState: JSON.parse(row.appState),
+      files: row.files ? JSON.parse(row.files) : {}
     });
   });
 });
@@ -632,13 +633,14 @@ app.get('/api/canvases/:id', authenticate, (req, res) => {
       id: row.id,
       title: row.title,
       elements: JSON.parse(row.elements),
-      appState: JSON.parse(row.appState)
+      appState: JSON.parse(row.appState),
+      files: row.files ? JSON.parse(row.files) : {}
     });
   });
 });
 
 app.put('/api/canvases/:id', authenticate, (req, res) => {
-  const { title, elements, appState } = req.body;
+  const { title, elements, appState, files } = req.body;
   const { id } = req.params;
 
   db.get('SELECT title FROM canvases WHERE id = ? AND user_id = ?', [id, req.user.id], (err, row) => {
@@ -651,8 +653,8 @@ app.put('/api/canvases/:id', authenticate, (req, res) => {
     }
 
     db.run(
-      'UPDATE canvases SET title = ?, elements = ?, appState = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
-      [finalTitle, JSON.stringify(elements), JSON.stringify(appState), id, req.user.id],
+      'UPDATE canvases SET title = ?, elements = ?, appState = ?, files = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+      [finalTitle, JSON.stringify(elements), JSON.stringify(appState), JSON.stringify(files || {}), id, req.user.id],
       function(err) {
         if (err) return res.status(500).json({ error: 'Failed to update canvas' });
         res.json({ success: true });

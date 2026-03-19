@@ -264,7 +264,8 @@ const initializeScene = async (opts: {
         if (data.elements) {
            localDataState = {
              elements: data.elements,
-             appState: data.appState || localDataState?.appState
+             appState: data.appState || localDataState?.appState,
+             files: data.files || localDataState?.files
            } as any;
         }
       } else if (res.status === 404) {

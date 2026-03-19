@@ -49,12 +49,18 @@ export const db = new sqlite3.Database(dbPath, (err) => {
         title TEXT,
         elements TEXT,
         appState TEXT,
+        files TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )`, (err) => {
       if (err) {
         console.error('Error creating canvases table', err);
       } else {
+        // Migration: add files column if it doesn't exist
+        db.run(`ALTER TABLE canvases ADD COLUMN files TEXT`, (alterErr) => {
+          // Ignore error if column already exists
+        });
+
         db.run(`CREATE TABLE IF NOT EXISTS oidc_config (
           id INTEGER PRIMARY KEY DEFAULT 1,
           provider_name TEXT DEFAULT 'OIDC登录',

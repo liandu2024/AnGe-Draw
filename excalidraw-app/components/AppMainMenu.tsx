@@ -103,9 +103,9 @@ const SavedCanvasesModal: React.FC<{ onClose: () => void, excalidrawAPI: any | n
     const oldId = getCanvasIdFromUrl();
     LocalData.flushSave();
     if (excalidrawAPI) {
-      await LocalData.forceSyncToBackend(excalidrawAPI.getSceneElements(), excalidrawAPI.getAppState(), oldId);
+      await LocalData.forceSyncToBackend(excalidrawAPI.getSceneElements(), excalidrawAPI.getAppState(), excalidrawAPI.getFiles(), oldId);
     } else {
-      await LocalData.forceSyncToBackend(undefined, undefined, oldId);
+      await LocalData.forceSyncToBackend(undefined, undefined, undefined, oldId);
     }
     onClose();
     navigate(`/canvas/${id}`);
@@ -360,9 +360,9 @@ export const AppMainMenu: React.FC<{
 
     LocalData.flushSave();
     if (props.excalidrawAPI) {
-      await LocalData.forceSyncToBackend(props.excalidrawAPI.getSceneElements(), props.excalidrawAPI.getAppState(), oldId);
+      await LocalData.forceSyncToBackend(props.excalidrawAPI.getSceneElements(), props.excalidrawAPI.getAppState(), props.excalidrawAPI.getFiles(), oldId);
     } else {
-      await LocalData.forceSyncToBackend(undefined, undefined, oldId);
+      await LocalData.forceSyncToBackend(undefined, undefined, undefined, oldId);
     }
     
     // Clear local storage so the new canvas doesn't inadvertently load the old one
