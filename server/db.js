@@ -1,3 +1,4 @@
+import fs from 'fs';
 import sqlite3 from 'sqlite3';
 import bcrypt from 'bcryptjs';
 import path from 'path';
@@ -6,7 +7,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dbPath = path.resolve(__dirname, 'excalidraw.db');
+const dataDir = process.env.DB_DIR || path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'excalidraw.db');
 
 export const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
