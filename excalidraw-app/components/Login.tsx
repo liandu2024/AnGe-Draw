@@ -14,6 +14,16 @@ export const Login: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Check URL for OIDC error params
+    const params = new URLSearchParams(window.location.search);
+    const oidcError = params.get('error');
+    const oidcErrorDesc = params.get('error_description');
+    if (oidcError) {
+      setError(`OIDC 登录失败: ${oidcError}${oidcErrorDesc ? ' - ' + oidcErrorDesc : ''}`);
+      // Clean up URL
+      window.history.replaceState({}, '', '/login');
+    }
+
     const fetchOidcConfig = async () => {
       // Bypass network call in test environment
       if (import.meta.env.MODE === 'test') return;

@@ -354,9 +354,21 @@ app.get('/api/auth/oidc/login', (req, res) => {
 });
 
 app.get('/api/auth/oidc/callback', (req, res) => {
+  // Log ALL query params immediately - this catches both success and error cases
+  logOidc('=== CALLBACK HIT ===');
+  logOidc('Callback query params:', JSON.stringify(req.query));
+  logOidc('Callback full URL:', req.originalUrl);
+
+  // Handle error responses from the OIDC provider
+  if (req.query.error) {
+    logOidc('ERROR from OIDC provider:', req.query.error, req.query.error_description || '');
+    return res.redirect(`/login?error=${encodeURIComponent(req.query.error)}&error_description=${encodeURIComponent(req.query.error_description || '')}`);
+  }
+
   const code = req.query.code;
   if (!code) {
-    return res.status(400).send('Missing authorization code');
+    logOidc('ERROR: Missing authorization code in callback');
+    return res.redirect('/login?error=missing_code');
   }
 
   db.get('SELECT * FROM oidc_config WHERE id = 1', async (err, config) => {
