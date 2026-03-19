@@ -309,6 +309,29 @@ export const AdminPanel: React.FC = () => {
                 <input type="text" value={oidcConfig.issuer_url} onChange={e => setOidcConfig({...oidcConfig, issuer_url: e.target.value})} placeholder="例如: https://auth.example.com/realms/master" />
               </div>
 
+              <div className="form-group">
+                <label>Redirect URI (回调地址)</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/api/auth/oidc/callback`}
+                    style={{ background: 'var(--color-gray-10)', cursor: 'text', color: 'var(--color-gray-60)', flex: 1 }}
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/auth/oidc/callback`)}
+                    style={{ padding: '8px 12px', background: 'var(--color-gray-20)', border: '1px solid var(--color-gray-30)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', color: 'var(--text-primary-color)' }}
+                    title="复制回调地址"
+                  >
+                    复制
+                  </button>
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--color-gray-50)' }}>
+                  请将此地址添加到 OIDC 提供商的「允许的回调 URL」列表中。
+                </p>
+              </div>
 
             </div>
             
