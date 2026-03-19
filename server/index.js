@@ -541,12 +541,9 @@ app.get('/api/auth/oidc/callback', (req, res) => {
         // 5. Generate local JWT
         const token = jwt.sign({ id: localUserId, username: username, role: localUserRole }, JWT_SECRET);
         
-        // 6. Redirect to frontend with token
-        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-        const host = req.headers['x-forwarded-host'] || req.get('host') || `${req.hostname}:3001`;
-        const frontendBase = `${protocol}://${host}`;
-        const redirectUrl = `${frontendBase}/oidc-callback?token=${token}&username=${encodeURIComponent(username)}&role=${localUserRole}&id=${localUserId}`;
-        console.log('[OIDC] Redirecting to frontend:', redirectUrl);
+        // 6. Redirect to frontend with token (use relative path so it works behind any reverse proxy)
+        const redirectUrl = `/oidc-callback?token=${token}&username=${encodeURIComponent(username)}&role=${localUserRole}&id=${localUserId}`;
+        logOidc('Redirecting to frontend (relative):', redirectUrl);
         res.redirect(redirectUrl);
       });
 
