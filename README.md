@@ -25,10 +25,26 @@ mkdir server
 touch server/excalidraw.db
 ```
 
-### 2. 通过 Docker Compose 启动
+### 2. 启动服务
+
+**方案 A: 使用 Docker Compose (推荐)**
 在包含 `docker-compose.yml` 配置文件的当前目录（即项目根目录）运行：
 ```bash
 docker-compose up -d --build
+```
+
+**方案 B: 使用原生 Docker Run**
+如果您没有安装 Docker Compose，也可以直接构建并运行单体容器：
+```bash
+# 构建镜像
+docker build -t ange-draw:latest .
+
+# 运行容器 (将本机的 8080 端口映射到容器，挂载刚才创建的数据库)
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/server/excalidraw.db:/app/server/excalidraw.db \
+  --name ange-draw \
+  ange-draw:latest
 ```
 
 ### 3. 开始使用
@@ -43,27 +59,9 @@ docker-compose up -d --build
 
 ---
 
-## 🛠️ 本地开发运行说明
-
-前端和后端由独立进程管理：
-
-1. **启动后端服务 (端口 8080)**：
-    ```bash
-    cd server
-    yarn install
-    yarn dev
-    ```
-
-2. **启动前端服务 (端口 3000)**：
-    ```bash
-    yarn install
-    yarn start
-    ```
-
----
-
 ## 📦 打包策略
 
 `Dockerfile` 采用了 Multi-stage 构建方案，极大缩减了镜像体积，过程分为以下两步：
 1. `yarn build:app:docker` 完成前端 React 产物的打包。
 2. 将构建好的静态产物 `excalidraw-app/build` 移动到后端进程内。当 `NODE_ENV=production` 时，由后端的 Express 实例统一承载接口请求和页面静态路由分发。
+
