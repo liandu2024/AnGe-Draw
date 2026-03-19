@@ -120,6 +120,36 @@ export default function LibraryMenuItems({
     prevPublishedCountRef.current = publishedItems.length;
   }, [publishedItems.length]);
 
+  const isAllExpanded = !Object.values(expandedGroups).some(v => v === false);
+
+  const handleToggleExpandAll = useCallback(() => {
+    if (isAllExpanded) {
+      // Collapse all
+      const newExpandedGroups: Record<string, boolean> = {};
+      if (activeTab === "excalidraw") {
+        publishedItems.forEach((item) => {
+          if (item.name && item.name.trim()) {
+            newExpandedGroups[item.name.trim()] = false;
+          }
+        });
+        const hasUngrouped = publishedItems.some(i => !i.name || !i.name.trim());
+        if (hasUngrouped) newExpandedGroups["__ungrouped"] = false;
+      } else {
+        unpublishedItems.forEach((item) => {
+          if (item.name && item.name.trim()) {
+            newExpandedGroups[item.name.trim()] = false;
+          }
+        });
+        const hasUngrouped = unpublishedItems.some(i => !i.name || !i.name.trim());
+        if (hasUngrouped) newExpandedGroups["__ungrouped"] = false;
+      }
+      setExpandedGroups(newExpandedGroups);
+    } else {
+      // Expand all
+      setExpandedGroups({});
+    }
+  }, [isAllExpanded, activeTab, publishedItems, unpublishedItems]);
+
   // Drag-and-drop state for group reordering (官方库)
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
@@ -387,19 +417,41 @@ export default function LibraryMenuItems({
   const JSX_whenNotSearching = !IS_SEARCHING && (
     <>
       <DefaultSidebar.TabTriggers>
-        <div className="library-tabs" style={{ margin: "0 auto" }}>
-          <div className="library-tabs-container">
-            <button
-              className={activeTab === "excalidraw" ? "active" : ""}
-              onClick={() => setActiveTab("excalidraw")}
+        <div style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
+          {/* Spacer to balance the flex if necessary, or just rely on margin auto */}
+          <div style={{ width: "3.5rem" }} />
+          <div className="library-tabs" style={{ margin: "0 auto" }}>
+            <div className="library-tabs-container">
+              <button
+                className={activeTab === "excalidraw" ? "active" : ""}
+                onClick={() => setActiveTab("excalidraw")}
+              >
+                {t("labels.excalidrawLib")}
+              </button>
+              <button
+                className={activeTab === "personal" ? "active" : ""}
+                onClick={() => setActiveTab("personal")}
+              >
+                {t("labels.personalLib")}
+              </button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.25rem", marginRight: "1rem" }}>
+            <button 
+              onClick={handleToggleExpandAll}
+              title={isAllExpanded ? "全部收缩" : "全部展开"}
+              style={{
+                width: "1.5rem", height: "1.5rem", padding: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "transparent", border: "none", cursor: "pointer",
+                color: "var(--icon-fill-color)", borderRadius: "4px"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "var(--button-hover-bg)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
             >
-              {t("labels.excalidrawLib")}
-            </button>
-            <button
-              className={activeTab === "personal" ? "active" : ""}
-              onClick={() => setActiveTab("personal")}
-            >
-              {t("labels.personalLib")}
+              <div style={{ display: "flex", alignItems: "center", width: "1rem", height: "1rem", justifyContent: "center", fill: "currentColor" }}>
+                {isAllExpanded ? collapseUpIcon : collapseDownIcon}
+              </div>
             </button>
           </div>
         </div>
