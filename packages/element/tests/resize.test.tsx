@@ -897,7 +897,6 @@ describe("multiple selection", () => {
 
   it("resizes with linear elements > 2 points", async () => {
     UI.clickTool("line");
-    UI.clickByTitle("Sharp");
 
     const line = UI.createElement("line", {
       x: 60,
