@@ -283,7 +283,10 @@ app.get('/api/auth/oidc/login', (req, res) => {
     }
 
     const redirect_uri = getOidcRedirectUri(req);
-    
+    // Encode redirect_uri into state so the callback always uses the same URI
+    // (the callback's Referer comes from the OIDC provider, not our app)
+    const state = Buffer.from(JSON.stringify({ redirect_uri })).toString('base64url');
+
     fetch(getWellKnownUrl(issuer_url))
       .then(r => r.json())
       .then(openIdConfig => {
@@ -292,7 +295,8 @@ app.get('/api/auth/oidc/login', (req, res) => {
         authUrl.searchParams.set('client_id', client_id);
         authUrl.searchParams.set('redirect_uri', redirect_uri);
         authUrl.searchParams.set('scope', 'openid profile email');
-        
+        authUrl.searchParams.set('state', state);
+
         console.log('[OIDC] Login redirect_uri:', redirect_uri);
         console.log('[OIDC] Authorization URL:', authUrl.toString());
         res.redirect(authUrl.toString());
@@ -316,7 +320,17 @@ app.get('/api/auth/oidc/callback', (req, res) => {
     }
 
     const { issuer_url, client_id, client_secret } = config;
-    const redirect_uri = getOidcRedirectUri(req);
+    // Decode redirect_uri from state (set during login) so both sides match exactly
+    let redirect_uri = getOidcRedirectUri(req); // fallback
+    try {
+      const stateParam = req.query.state;
+      if (stateParam) {
+        const stateObj = JSON.parse(Buffer.from(stateParam, 'base64url').toString());
+        if (stateObj.redirect_uri) redirect_uri = stateObj.redirect_uri;
+      }
+    } catch (e) {
+      console.warn('[OIDC] Could not decode state param, using fallback redirect_uri');
+    }
     const wellKnownUrl = getWellKnownUrl(issuer_url);
 
     console.log('[OIDC] Callback received. redirect_uri:', redirect_uri);
