@@ -22,7 +22,6 @@ export const AdminPanel: React.FC = () => {
     client_id: '',
     client_secret: '',
     issuer_url: '',
-    username_claim: 'name',
     enabled: false
   });
   const [oidcSaved, setOidcSaved] = useState(false);
@@ -56,7 +55,6 @@ export const AdminPanel: React.FC = () => {
           client_id: res.data.client_id || '',
           client_secret: res.data.client_secret || '',
           issuer_url: res.data.issuer_url || '',
-          username_claim: res.data.username_claim || 'name',
           enabled: !!res.data.enabled
         });
       }
@@ -310,13 +308,7 @@ export const AdminPanel: React.FC = () => {
                 <label>Issuer URL (发行者URL)</label>
                 <input type="text" value={oidcConfig.issuer_url} onChange={e => setOidcConfig({...oidcConfig, issuer_url: e.target.value})} placeholder="例如: https://auth.example.com/realms/master" />
               </div>
-              <div className="form-group">
-                <label>用户名标识符 (Username Claim)</label>
-                <input type="text" value={oidcConfig.username_claim} onChange={e => setOidcConfig({...oidcConfig, username_claim: e.target.value})} placeholder="name" />
-                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--color-gray-50)' }}>
-                  用于从 OIDC 令牌中提取用户名的字段。常用值: name, preferred_username, email
-                </p>
-              </div>
+
 
             </div>
             

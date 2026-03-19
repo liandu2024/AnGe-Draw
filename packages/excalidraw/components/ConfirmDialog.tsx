@@ -1,81 +1,68 @@
-import { flushSync } from "react-dom";
-
 import { useSetAtom } from "../editor-jotai";
 import { t } from "../i18n";
 
-import { Dialog } from "./Dialog";
-import DialogActionButton from "./DialogActionButton";
 import { isLibraryMenuOpenAtom } from "./LibraryMenu";
-import { useExcalidrawContainer, useExcalidrawSetAppState } from "./App";
+import { useExcalidrawSetAppState } from "./App";
 
 import "./ConfirmDialog.scss";
 
-import type { DialogProps } from "./Dialog";
-
-interface Props extends Omit<DialogProps, "onCloseRequest"> {
+interface Props {
   onConfirm: () => void;
   onCancel: () => void;
+  title?: string;
   confirmText?: string;
   cancelText?: string;
+  children?: React.ReactNode;
+  className?: string;
 }
 const ConfirmDialog = (props: Props) => {
   const {
     onConfirm,
     onCancel,
     children,
+    title,
     confirmText = t("buttons.confirm"),
     cancelText = t("buttons.cancel"),
-    className = "",
-    ...rest
   } = props;
   const setAppState = useExcalidrawSetAppState();
   const setIsLibraryMenuOpen = useSetAtom(isLibraryMenuOpenAtom);
-  const { container } = useExcalidrawContainer();
+
+  const handleCancel = () => {
+    setAppState({ openMenu: null });
+    setIsLibraryMenuOpen(false);
+    onCancel();
+  };
+
+  const handleConfirm = () => {
+    setAppState({ openMenu: null });
+    setIsLibraryMenuOpen(false);
+    onConfirm();
+  };
 
   return (
-    <Dialog
-      onCloseRequest={onCancel}
-      size="small"
-      {...rest}
-      className={`confirm-dialog ${className}`}
-    >
-      {children}
-      <div className="confirm-dialog-buttons">
-        <DialogActionButton
-          label={cancelText}
-          onClick={() => {
-            setAppState({ openMenu: null });
-            setIsLibraryMenuOpen(false);
-            // flush any pending updates synchronously,
-            // otherwise it could lead to crash in some chromium versions (131.0.6778.86),
-            // when `.focus` is invoked with container in some intermediate state
-            // (container seems mounted in DOM, but focus still causes a crash)
-            flushSync(() => {
-              onCancel();
-            });
-
-            container?.focus();
-          }}
-        />
-        <DialogActionButton
-          label={confirmText}
-          onClick={() => {
-            setAppState({ openMenu: null });
-            setIsLibraryMenuOpen(false);
-            // flush any pending updates synchronously,
-            // otherwise it leads to crash in some chromium versions (131.0.6778.86),
-            // when `.focus` is invoked with container in some intermediate state
-            // (container seems mounted in DOM, but focus still causes a crash)
-            flushSync(() => {
-              onConfirm();
-            });
-
-            container?.focus();
-          }}
-          actionType="danger"
-        />
+    <div className="confirm-dialog-overlay" onClick={handleCancel}>
+      <div
+        className="confirm-dialog-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {title && <h3 className="confirm-dialog-title">{title}</h3>}
+        <div className="confirm-dialog-content">{children}</div>
+        <div className="confirm-dialog-buttons">
+          <button
+            className="confirm-dialog-btn confirm-dialog-btn--cancel"
+            onClick={handleCancel}
+          >
+            {cancelText}
+          </button>
+          <button
+            className="confirm-dialog-btn confirm-dialog-btn--confirm"
+            onClick={handleConfirm}
+          >
+            {confirmText}
+          </button>
+        </div>
       </div>
-    </Dialog>
+    </div>
   );
 };
 export default ConfirmDialog;

@@ -10,6 +10,7 @@ export const hasBackground = (type: ElementOrToolType) =>
   type === "freedraw";
 
 export const hasStrokeColor = (type: ElementOrToolType) =>
+  type === "laser" ||
   type === "rectangle" ||
   type === "ellipse" ||
   type === "diamond" ||
@@ -20,6 +21,7 @@ export const hasStrokeColor = (type: ElementOrToolType) =>
   type === "embeddable";
 
 export const hasStrokeWidth = (type: ElementOrToolType) =>
+  type === "laser" ||
   type === "rectangle" ||
   type === "iframe" ||
   type === "embeddable" ||

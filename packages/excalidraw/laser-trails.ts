@@ -24,7 +24,9 @@ export class LaserTrails implements Trail {
 
     this.localTrail = new AnimatedTrail(animationFrameHandler, app, {
       ...this.getTrailOptions(),
-      fill: () => DEFAULT_LASER_COLOR,
+      fill: () => this.app.state.currentItemStrokeColor,
+      opacity: () => this.app.state.currentItemOpacity / 100,
+      getSize: () => this.app.state.currentItemStrokeWidth * 2,
     });
   }
 
@@ -91,6 +93,8 @@ export class LaserTrails implements Trail {
           fill: () =>
             collaborator.pointer?.laserColor ||
             getClientColor(key, collaborator),
+          opacity: () => (collaborator.pointer?.laserOpacity ?? 100) / 100,
+          getSize: () => (collaborator.pointer?.laserStrokeWidth ?? 1) * 2,
         });
         trail.start(this.container);
 

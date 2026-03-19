@@ -82,6 +82,8 @@ import {
   DotsHorizontalIcon,
   SelectionIcon,
   pencilIcon,
+  collapseDownIcon,
+  collapseUpIcon,
 } from "./icons";
 
 import { Island } from "./Island";
@@ -187,11 +189,21 @@ export const SelectedShapeActions = ({
     !isSingleElementBoundContainer && alignActionsPredicate(appState, app);
 
   return (
-    <div className="selected-shape-actions">
-      <div>
-        {canChangeStrokeColor(appState, targetElements) &&
-          renderAction("changeStrokeColor")}
-      </div>
+    <div className={clsx("selected-shape-actions", { "panel-collapsed": appState.selectedShapeActionsCollapsed })} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className={clsx("panel-collapse-button", { active: appState.selectedShapeActionsCollapsed })}
+        onClick={() => app.setAppState({ selectedShapeActionsCollapsed: !appState.selectedShapeActionsCollapsed })}
+        title={appState.selectedShapeActionsCollapsed ? "展开 / Expand" : "收缩 / Collapse"}
+      >
+        {appState.selectedShapeActionsCollapsed ? collapseDownIcon : collapseUpIcon}
+      </button>
+
+      <div className="panel-props-content">
+        <div>
+          {canChangeStrokeColor(appState, targetElements) &&
+            renderAction("changeStrokeColor")}
+        </div>
       {canChangeBackgroundColor(appState, targetElements) && (
         <div>{renderAction("changeBackgroundColor")}</div>
       )}
@@ -311,6 +323,7 @@ export const SelectedShapeActions = ({
           </div>
         </fieldset>
       )}
+      </div>
     </div>
   );
 };

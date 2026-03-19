@@ -24,6 +24,8 @@ export interface Trail {
 export interface AnimatedTrailOptions {
   fill: (trail: AnimatedTrail) => string;
   stroke?: (trail: AnimatedTrail) => string;
+  opacity?: (trail: AnimatedTrail) => number;
+  getSize?: () => number;
   animateTrail?: boolean;
 }
 
@@ -94,7 +96,10 @@ export class AnimatedTrail implements Trail {
   }
 
   startPath(x: number, y: number) {
-    this.currentTrail = new LaserPointer(this.options);
+    this.currentTrail = new LaserPointer({
+      ...this.options,
+      size: this.options.getSize ? this.options.getSize() : this.options.size,
+    });
 
     this.currentTrail.addPoint([x, y, performance.now()]);
 
@@ -161,18 +166,27 @@ export class AnimatedTrail implements Trail {
 
     this.trailElement.setAttribute("d", svgPaths);
     if (this.trailAnimation) {
+      const computedFill = (this.options.fill ?? (() => "black"))(this);
       this.trailElement.setAttribute(
         "fill",
-        (this.options.fill ?? (() => "black"))(this),
+        computedFill,
       );
       this.trailElement.setAttribute(
         "stroke",
         (this.options.stroke ?? (() => "black"))(this),
       );
     } else {
+      const computedFill = (this.options.fill ?? (() => "black"))(this);
       this.trailElement.setAttribute(
         "fill",
-        (this.options.fill ?? (() => "black"))(this),
+        computedFill,
+      );
+    }
+
+    if (this.options.opacity) {
+      this.trailElement.setAttribute(
+        "opacity",
+        this.options.opacity(this).toString(),
       );
     }
   }

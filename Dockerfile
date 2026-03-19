@@ -1,20 +1,29 @@
-FROM --platform=${BUILDPLATFORM} node:18 AS build
-
-WORKDIR /opt/node_app
-
+# Stage 1: Build Frontend
+FROM node:18 AS frontend-build
+WORKDIR /app
 COPY . .
+# Install monorepo dependencies and build the app
+RUN yarn install --network-timeout 600000
+RUN yarn build:app:docker
 
-# do not ignore optional dependencies:
-# Error: Cannot find module @rollup/rollup-linux-x64-gnu
-RUN --mount=type=cache,target=/root/.cache/yarn \
-    npm_config_target_arch=${TARGETARCH} yarn --network-timeout 600000
+# Stage 2: Final Image (Backend + Compiled Frontend)
+FROM node:18-alpine
+WORKDIR /app
 
-ARG NODE_ENV=production
+# Copy the backend files and install dependencies
+COPY server/package.json server/yarn.lock ./server/
+WORKDIR /app/server
+# We might not have a yarn.lock in the server dir specifically, 
+# but yarn install will generate one or use package.json
+RUN yarn install --production
 
-RUN npm_config_target_arch=${TARGETARCH} yarn build:app:docker
+# Map the backend source code
+COPY server/ ./
+# Copy built frontend
+COPY --from=frontend-build /app/excalidraw-app/build /app/excalidraw-app/build
 
-FROM --platform=${TARGETPLATFORM} nginx:1.27-alpine
+EXPOSE 8080
+ENV NODE_ENV=production
+ENV PORT=8080
 
-COPY --from=build /opt/node_app/excalidraw-app/build /usr/share/nginx/html
-
-HEALTHCHECK CMD wget -q -O /dev/null http://localhost || exit 1
+CMD ["node", "index.js"]

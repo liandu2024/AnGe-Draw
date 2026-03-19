@@ -833,32 +833,33 @@ const _generateElementShape = (
       const [topX, topY, rightX, rightY, bottomX, bottomY, leftX, leftY] =
         getDiamondPoints(element);
       if (element.roundness) {
-        const verticalRadius = getCornerRadius(Math.abs(topX - leftX), element);
+        const r = getCornerRadius(Math.min(element.width, element.height), element);
 
-        const horizontalRadius = getCornerRadius(
-          Math.abs(rightY - topY),
-          element,
-        );
+        const getPointOnLine = (p1: [number, number], p2: [number, number], d: number) => {
+          const dx = p2[0] - p1[0];
+          const dy = p2[1] - p1[1];
+          const len = Math.hypot(dx, dy);
+          if (len === 0) {
+            return p1;
+          }
+          const ratio = Math.min(d / len, 0.5);
+          return [p1[0] + dx * ratio, p1[1] + dy * ratio];
+        };
+
+        const rTopLeft = getPointOnLine([topX, topY], [leftX, leftY], r);
+        const rTopRight = getPointOnLine([topX, topY], [rightX, rightY], r);
+        
+        const rRightTop = getPointOnLine([rightX, rightY], [topX, topY], r);
+        const rRightBottom = getPointOnLine([rightX, rightY], [bottomX, bottomY], r);
+
+        const rBottomRight = getPointOnLine([bottomX, bottomY], [rightX, rightY], r);
+        const rBottomLeft = getPointOnLine([bottomX, bottomY], [leftX, leftY], r);
+
+        const rLeftBottom = getPointOnLine([leftX, leftY], [bottomX, bottomY], r);
+        const rLeftTop = getPointOnLine([leftX, leftY], [topX, topY], r);
 
         shape = generator.path(
-          `M ${topX + verticalRadius} ${topY + horizontalRadius} L ${
-            rightX - verticalRadius
-          } ${rightY - horizontalRadius}
-            C ${rightX} ${rightY}, ${rightX} ${rightY}, ${
-            rightX - verticalRadius
-          } ${rightY + horizontalRadius}
-            L ${bottomX + verticalRadius} ${bottomY - horizontalRadius}
-            C ${bottomX} ${bottomY}, ${bottomX} ${bottomY}, ${
-            bottomX - verticalRadius
-          } ${bottomY - horizontalRadius}
-            L ${leftX + verticalRadius} ${leftY + horizontalRadius}
-            C ${leftX} ${leftY}, ${leftX} ${leftY}, ${leftX + verticalRadius} ${
-            leftY - horizontalRadius
-          }
-            L ${topX - verticalRadius} ${topY + horizontalRadius}
-            C ${topX} ${topY}, ${topX} ${topY}, ${topX + verticalRadius} ${
-            topY + horizontalRadius
-          }`,
+          `M ${rTopRight[0]} ${rTopRight[1]} L ${rRightTop[0]} ${rRightTop[1]} Q ${rightX} ${rightY}, ${rRightBottom[0]} ${rRightBottom[1]} L ${rBottomRight[0]} ${rBottomRight[1]} Q ${bottomX} ${bottomY}, ${rBottomLeft[0]} ${rBottomLeft[1]} L ${rLeftBottom[0]} ${rLeftBottom[1]} Q ${leftX} ${leftY}, ${rLeftTop[0]} ${rLeftTop[1]} L ${rTopLeft[0]} ${rTopLeft[1]} Q ${topX} ${topY}, ${rTopRight[0]} ${rTopRight[1]}`,
           generateRoughOptions(element, true, isDarkMode),
         );
       } else {

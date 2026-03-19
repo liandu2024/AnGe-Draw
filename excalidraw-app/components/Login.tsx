@@ -54,7 +54,7 @@ export const Login: React.FC = () => {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h2>Excalidraw 登录</h2>
+        <h2>AnGe-Draw 登录</h2>
         {error && <div className="error-message">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">

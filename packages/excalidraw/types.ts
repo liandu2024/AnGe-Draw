@@ -105,6 +105,16 @@ export type CollaboratorPointer = {
    * @default string collaborator's cursor color
    */
   laserColor?: string;
+  /**
+   * Explicit laser stroke width (1-4).
+   * @default 2
+   */
+  laserStrokeWidth?: number;
+  /**
+   * Explicit laser opacity (0-100).
+   * @default 100
+   */
+  laserOpacity?: number;
 };
 
 export type DataURL = string & { _brand: "DataURL" };
@@ -469,6 +479,7 @@ export interface AppState {
   // and also remove groupId from this map
   lockedMultiSelections: { [groupId: string]: true };
   bindMode: BindMode;
+  selectedShapeActionsCollapsed: boolean;
 }
 
 export type SearchMatch = {

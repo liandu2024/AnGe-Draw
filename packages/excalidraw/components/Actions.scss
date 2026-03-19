@@ -206,3 +206,52 @@
   --button-hover-bg: #363541;
   --button-bg: var(--color-surface-high);
 }
+
+.panel-collapse-button {
+  position: absolute;
+  top: -0.5rem;
+  right: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-lg);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--icon-fill-color);
+  padding: 0;
+  z-index: 10;
+  
+  svg {
+    width: 60%;
+    height: 60%;
+  }
+
+  &:hover,
+  &.active {
+    background: var(--button-hover-bg);
+  }
+
+}
+
+.selected-shape-actions.panel-collapsed {
+  /* Ensure the container maintains its default width so the button doesn't float inward */
+  min-width: 10rem;
+  margin-bottom: -0.5rem;
+  
+  .panel-props-content {
+    > *:not(:first-child) {
+      display: none !important;
+    }
+    
+    > *:first-child {
+      height: 1.25rem;
+      overflow: hidden;
+      margin-bottom: 0 !important;
+      padding-bottom: 0 !important;
+    }
+  }
+}
+

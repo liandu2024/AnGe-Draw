@@ -12402,6 +12402,12 @@ class App extends React.Component<AppProps, AppState> {
       tool: this.state.activeTool.type === "laser" ? "laser" : "pointer",
     };
 
+    if (this.state.activeTool.type === "laser") {
+      pointer.laserColor = this.state.currentItemStrokeColor;
+      pointer.laserStrokeWidth = this.state.currentItemStrokeWidth;
+      pointer.laserOpacity = this.state.currentItemOpacity;
+    }
+
     this.props.onPointerUpdate?.({
       pointer,
       button,

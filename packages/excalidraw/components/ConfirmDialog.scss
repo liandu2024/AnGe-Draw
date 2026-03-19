@@ -1,11 +1,75 @@
-@use "../css/variables.module" as *;
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-.excalidraw {
-  .confirm-dialog {
-    &-buttons {
-      display: flex;
-      column-gap: 0.5rem;
-      justify-content: flex-end;
+.confirm-dialog-card {
+  background: var(--island-bg-color, white);
+  padding: 24px;
+  border-radius: 8px;
+  width: 320px;
+  text-align: center;
+  border: 1px solid var(--color-gray-20, #e9ecef);
+  box-shadow: none;
+}
+
+.confirm-dialog-title {
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--text-primary-color, #212529);
+}
+
+.confirm-dialog-content {
+  margin: 0 0 24px 0;
+  font-size: 14px;
+  color: var(--color-gray-50, #868e96);
+
+  p {
+    margin: 0;
+  }
+}
+
+.confirm-dialog-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.confirm-dialog-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 14px;
+  transition: background 0.15s;
+
+  &--cancel {
+    background: white;
+    color: #495057;
+    border: 1px solid #ced4da;
+
+    &:hover {
+      background: #f1f3f5;
+    }
+  }
+
+  &--confirm {
+    background: #e03131;
+    color: #ffffff;
+    border: none;
+
+    &:hover {
+      background: #c92a2a;
     }
   }
 }

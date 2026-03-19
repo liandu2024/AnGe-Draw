@@ -2,7 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { db } from './db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -210,12 +215,12 @@ app.get('/api/public-oidc-config', (req, res) => {
 });
 
 app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
-  const { provider_name, client_id, client_secret, issuer_url, username_claim, enabled } = req.body;
+  const { provider_name, client_id, client_secret, issuer_url, enabled } = req.body;
   const isEnabled = enabled ? 1 : 0;
   
   db.run(
-    'UPDATE oidc_config SET provider_name = ?, client_id = ?, client_secret = ?, issuer_url = ?, username_claim = ?, enabled = ? WHERE id = 1',
-    [provider_name, client_id, client_secret, issuer_url, username_claim || 'name', isEnabled],
+    'UPDATE oidc_config SET provider_name = ?, client_id = ?, client_secret = ?, issuer_url = ?, enabled = ? WHERE id = 1',
+    [provider_name, client_id, client_secret, issuer_url, isEnabled],
     function(err) {
       if (err) return res.status(500).json({ error: 'Failed to update OIDC config' });
       res.json({ success: true });
@@ -334,7 +339,7 @@ app.get('/api/auth/oidc/callback', (req, res) => {
       }
 
       // 3. Get user info
-      const targetClaim = config.username_claim || 'name';
+      // We will check standard claims later
       console.log('[OIDC] Token type:', tokenData.token_type, 'access_token prefix:', tokenData.access_token?.substring(0, 20) + '...');
       console.log('[OIDC] Scopes granted:', tokenData.scope);
       
@@ -376,8 +381,8 @@ app.get('/api/auth/oidc/callback', (req, res) => {
         console.warn('[OIDC] UserInfo fetch error:', e.message, '- will try id_token');
       }
       
-      // Fallback: decode id_token if userinfo didn't work or didn't have the claim we need
-      if (!userInfo || !userInfo[targetClaim]) {
+      // Fallback: decode id_token if userinfo didn't work
+      if (!userInfo || !(userInfo.preferred_username || userInfo.name || userInfo.email)) {
         if (tokenData.id_token) {
           try {
             const parts = tokenData.id_token.split('.');
@@ -398,10 +403,9 @@ app.get('/api/auth/oidc/callback', (req, res) => {
       console.log('[OIDC] Final userInfo:', JSON.stringify(userInfo));
 
       // 4. Map OIDC user to local user
-      // Use the configured username_claim, with fallbacks
-      const claim = config.username_claim || 'name';
-      const username = userInfo[claim] || userInfo.preferred_username || userInfo.name || userInfo.email || userInfo.sub;
-      console.log('[OIDC] Using claim:', claim, '=> username:', username);
+      // Use standard fallbacks for username
+      const username = userInfo.preferred_username || userInfo.name || userInfo.email || userInfo.sub;
+      console.log('[OIDC] Extracted username:', username);
       
       if (!username) {
         throw new Error('OIDC provider did not return a usable username. UserInfo: ' + JSON.stringify(userInfo));
@@ -578,7 +582,16 @@ app.delete('/api/canvases/:id', authenticate, (req, res) => {
   });
 });
 
-const PORT = 8080;
+// --- STATIC FRONTEND SERVING (PRODUCTION) ---
+if (process.env.NODE_ENV === 'production') {
+  const buildPath = path.join(__dirname, '../excalidraw-app/build');
+  app.use(express.static(buildPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(buildPath, 'index.html'));
+  });
+}
+
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Local backend server running on http://0.0.0.0:${PORT} (LAN reachable)`);
 });
