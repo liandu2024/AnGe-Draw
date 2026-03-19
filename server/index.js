@@ -231,7 +231,12 @@ app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
 // --- OIDC FLOW ROUTES ---
 
 // Helper: auto-generate the redirect_uri from the incoming request
+// If FRONTEND_URL is set (e.g. "https://angedraw.ok1248.cn:4433"), use it directly.
+// This is necessary when running behind a reverse proxy that doesn't forward X-Forwarded headers.
 function getOidcRedirectUri(req) {
+  if (process.env.FRONTEND_URL) {
+    return `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api/auth/oidc/callback`;
+  }
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   const host = req.headers['x-forwarded-host'] || req.get('host');
   return `${protocol}://${host}/api/auth/oidc/callback`;
