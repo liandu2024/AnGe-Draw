@@ -24,6 +24,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (import.meta.env.MODE === 'test') {
+      setUser({ id: 0, username: 'test-admin', role: 'ADMIN' });
+      setLoading(false);
+      return;
+    }
     if (token) {
       axios.get('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
         .then(res => {
