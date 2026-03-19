@@ -417,7 +417,7 @@ export default function LibraryMenuItems({
   const JSX_whenNotSearching = !IS_SEARCHING && (
     <>
       <DefaultSidebar.TabTriggers>
-        <div style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "flex-start", gap: "0.5rem", paddingLeft: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "flex-start", gap: "0.25rem" }}>
           <div className="library-tabs" style={{ margin: 0 }}>
             <div className="library-tabs-container">
               <button
@@ -434,24 +434,22 @@ export default function LibraryMenuItems({
               </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "0.25rem" }}>
-            <button 
-              onClick={handleToggleExpandAll}
-              title={isAllExpanded ? "全部收缩" : "全部展开"}
-              style={{
-                width: "1.5rem", height: "1.5rem", padding: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "transparent", border: "none", cursor: "pointer",
-                color: "var(--icon-fill-color)", borderRadius: "4px"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "var(--button-hover-bg)"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-            >
-              <div style={{ display: "flex", alignItems: "center", width: "1rem", height: "1rem", justifyContent: "center", fill: "currentColor" }}>
-                {isAllExpanded ? collapseUpIcon : collapseDownIcon}
-              </div>
-            </button>
-          </div>
+          <button 
+            onClick={handleToggleExpandAll}
+            title={isAllExpanded ? "全部收缩" : "全部展开"}
+            style={{
+              width: "2rem", height: "2rem", padding: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "none", cursor: "pointer",
+              color: "var(--icon-fill-color)", borderRadius: "6px"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "var(--button-hover-bg)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+          >
+            <div style={{ display: "flex", alignItems: "center", width: "1.5rem", height: "1.5rem", justifyContent: "center", fill: "currentColor" }}>
+              {isAllExpanded ? collapseUpIcon : collapseDownIcon}
+            </div>
+          </button>
         </div>
       </DefaultSidebar.TabTriggers>
 
@@ -463,9 +461,9 @@ export default function LibraryMenuItems({
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0", width: "100%" }}>
             {pendingElements.length > 0 && (
-              <div className="library-menu-group">
+              <div className="library-menu-group" style={{ width: "100%" }}>
                 <LibraryMenuSectionGrid>
                   <LibraryMenuSection
                     itemsRenderedPerBatch={itemsRenderedPerBatch}
@@ -502,7 +500,7 @@ export default function LibraryMenuItems({
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
             {(() => {
               const groups: Record<string, LibraryItem[]> = {};
               const ungrouped: LibraryItem[] = [];
@@ -527,6 +525,7 @@ export default function LibraryMenuItems({
                         key={groupName}
                         className="library-menu-group"
                         style={{
+                          width: "100%",
                           display: "flex", flexDirection: "column",
                           opacity: isDragging ? 0.5 : 1,
                           borderTop: isDragOver ? "2px solid var(--color-primary)" : "2px solid transparent",
@@ -627,7 +626,7 @@ export default function LibraryMenuItems({
                   {ungrouped.length > 0 && (() => {
                     const isExpanded = expandedGroups["__ungrouped"] !== false;
                     return (
-                      <div className="library-menu-group" style={{ display: "flex", flexDirection: "column", marginTop: "0.25rem" }}>
+                      <div className="library-menu-group" style={{ display: "flex", flexDirection: "column", marginTop: "0.25rem", width: "100%" }}>
                         <div
                           className="library-menu-items-container__header"
                           style={{
