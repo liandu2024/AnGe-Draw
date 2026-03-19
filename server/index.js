@@ -272,12 +272,13 @@ function getOidcRedirectUri(req) {
     return uri;
   }
   // 4. Fallback: derive from request itself
-  // Force https if host is not localhost and we didn't get a protocol from elsewhere,
-  // because reverse proxies often talk to the backend over HTTP even if the outer is HTTPS.
+  // If we suspect a reverse proxy (e.g. x-forwarded-host or x-forwarded-for exists)
+  // but it didn't pass x-forwarded-proto, assume it's HTTPS (very common for Nginx -> HTTP Node setups)
   let protocol = req.protocol || 'http';
   const host = req.get('host');
-  if (host && host.includes('ok1248.cn') && protocol === 'http') {
-     console.log('[OIDC Debug] Coercing protocol to https based on hostname ok1248.cn');
+  
+  if (protocol === 'http' && (req.headers['x-forwarded-host'] || req.headers['x-forwarded-for'])) {
+     console.log('[OIDC Debug] Coercing protocol to https because proxy headers detected without proto');
      protocol = 'https';
   }
 
