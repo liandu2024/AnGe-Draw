@@ -200,27 +200,30 @@ app.delete('/api/users/:id', authenticate, requireAdmin, (req, res) => {
 app.get('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
   db.get('SELECT * FROM oidc_config WHERE id = 1', (err, row) => {
     if (err) return res.status(500).json({ error: 'Failed to fetch OIDC config' });
-    res.json(row || {});
+    if (!row) return res.json({});
+    // Don't send secret to frontend unless asking to test, but we send it here for editing
+    res.json(row);
   });
 });
 
 app.get('/api/public-oidc-config', (req, res) => {
   db.get('SELECT enabled, provider_name FROM oidc_config WHERE id = 1', (err, row) => {
     if (err) return res.status(500).json({ error: 'Failed to fetch public OIDC config' });
-    if (!row) {
-      return res.json({ enabled: 0, provider_name: '' });
-    }
-    res.json({ enabled: row.enabled, provider_name: row.provider_name });
+    if (!row) return res.json({ enabled: 0 });
+    res.json(row);
   });
 });
 
 app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
-  const { provider_name, client_id, client_secret, issuer_url, enabled } = req.body;
-  const isEnabled = enabled ? 1 : 0;
+  const { provider_name, client_id, client_secret, issuer_url, redirect_uri, enabled } = req.body;
   
+  if (enabled && (!client_id || !client_secret || !issuer_url)) {
+    return res.status(400).json({ error: 'Client ID, Secret and Issuer URL are required to enable OIDC' });
+  }
+
   db.run(
-    'UPDATE oidc_config SET provider_name = ?, client_id = ?, client_secret = ?, issuer_url = ?, enabled = ? WHERE id = 1',
-    [provider_name, client_id, client_secret, issuer_url, isEnabled],
+    'UPDATE oidc_config SET provider_name = ?, client_id = ?, client_secret = ?, issuer_url = ?, redirect_uri = ?, enabled = ? WHERE id = 1',
+    [provider_name, client_id, client_secret, issuer_url, redirect_uri, enabled ? 1 : 0],
     function(err) {
       if (err) return res.status(500).json({ error: 'Failed to update OIDC config' });
       res.json({ success: true });
@@ -303,12 +306,13 @@ app.get('/api/auth/oidc/login', (req, res) => {
       return res.status(400).json({ error: 'OIDC is not configured or disabled' });
     }
 
-    const { issuer_url, client_id } = config;
+    const { issuer_url, client_id, redirect_uri: custom_redirect_uri } = config;
     if (!issuer_url || !client_id) {
       return res.status(400).json({ error: 'Incomplete OIDC config' });
     }
 
-    const redirect_uri = getOidcRedirectUri(req);
+    // Use custom redirect URI if configured, otherwise auto-detect
+    const redirect_uri = custom_redirect_uri ? custom_redirect_uri.trim() : getOidcRedirectUri(req);
     // Encode redirect_uri into state so the callback always uses the same URI
     // (the callback's Referer comes from the OIDC provider, not our app)
     const state = Buffer.from(JSON.stringify({ redirect_uri })).toString('base64url');
@@ -345,9 +349,10 @@ app.get('/api/auth/oidc/callback', (req, res) => {
       return res.status(400).send('OIDC is not configured or disabled');
     }
 
-    const { issuer_url, client_id, client_secret } = config;
+    const { issuer_url, client_id, client_secret, redirect_uri: custom_redirect_uri } = config;
     // Decode redirect_uri from state (set during login) so both sides match exactly
-    let redirect_uri = getOidcRedirectUri(req); // fallback
+    // Use custom redirect URI if configured as the ultimate fallback
+    let redirect_uri = custom_redirect_uri ? custom_redirect_uri.trim() : getOidcRedirectUri(req);
     let decodedState = false;
     try {
       const stateParam = req.query.state;

@@ -22,6 +22,7 @@ export const AdminPanel: React.FC = () => {
     client_id: '',
     client_secret: '',
     issuer_url: '',
+    redirect_uri: '',
     enabled: false
   });
   const [oidcSaved, setOidcSaved] = useState(false);
@@ -55,6 +56,7 @@ export const AdminPanel: React.FC = () => {
           client_id: res.data.client_id || '',
           client_secret: res.data.client_secret || '',
           issuer_url: res.data.issuer_url || '',
+          redirect_uri: res.data.redirect_uri || '',
           enabled: !!res.data.enabled
         });
       }
@@ -310,18 +312,18 @@ export const AdminPanel: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Redirect URI (回调地址)</label>
+                <label>Redirect URI (回调地址) - 留空则自动检测</label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
                     type="text"
-                    readOnly
-                    value={`${window.location.origin}/api/auth/oidc/callback`}
-                    style={{ background: 'var(--color-gray-10)', cursor: 'text', color: 'var(--color-gray-60)', flex: 1 }}
-                    onClick={e => (e.target as HTMLInputElement).select()}
+                    value={oidcConfig.redirect_uri}
+                    onChange={e => setOidcConfig({...oidcConfig, redirect_uri: e.target.value})}
+                    placeholder={`默认: ${window.location.origin}/api/auth/oidc/callback`}
+                    style={{ flex: 1 }}
                   />
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/auth/oidc/callback`)}
+                    onClick={() => navigator.clipboard.writeText(oidcConfig.redirect_uri || `${window.location.origin}/api/auth/oidc/callback`)}
                     style={{ padding: '8px 12px', background: 'var(--color-gray-20)', border: '1px solid var(--color-gray-30)', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', color: 'var(--text-primary-color)' }}
                     title="复制回调地址"
                   >
