@@ -233,6 +233,19 @@ app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
 
 // --- OIDC FLOW ROUTES ---
 
+// Helper function to append to a log file
+function logOidc(...args) {
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  const logMsg = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log('[OIDC]', msg);
+  try {
+    const logPath = path.join(__dirname, 'data', 'oidc.log');
+    fs.appendFileSync(logPath, logMsg);
+  } catch (e) {
+    console.error('Failed to write to oidc.log:', e);
+  }
+}
+
 // Helper: detect the real public URL for OIDC redirect_uri.
 // Works automatically behind a reverse proxy without any extra config:
 // Priority 1: X-Forwarded-Proto + X-Forwarded-Host (standard reverse proxy headers)
@@ -240,9 +253,10 @@ app.put('/api/oidc-config', authenticate, requireAdmin, (req, res) => {
 // Priority 3: FRONTEND_URL env var (explicit override)
 // Priority 4: Fallback to raw host from request
 function getOidcRedirectUri(req) {
-  console.log('[OIDC Debug] Incoming request headers for redirectURI:', JSON.stringify({
+  logOidc('Incoming request headers for redirectURI:', JSON.stringify({
     'x-forwarded-proto': req.headers['x-forwarded-proto'],
     'x-forwarded-host': req.headers['x-forwarded-host'],
+    'x-forwarded-for': req.headers['x-forwarded-for'],
     'referer': req.headers['referer'] || req.headers['referrer'],
     'host': req.get('host'),
     'protocol': req.protocol
@@ -253,7 +267,7 @@ function getOidcRedirectUri(req) {
     const protocol = req.headers['x-forwarded-proto'].split(',')[0].trim();
     const host = req.headers['x-forwarded-host'].split(',')[0].trim();
     const uri = `${protocol}://${host}/api/auth/oidc/callback`;
-    console.log('[OIDC Debug] Using X-Forwarded headers:', uri);
+    logOidc('Using X-Forwarded headers:', uri);
     return uri;
   }
   // 2. Referer header — browser automatically sends the originating page URL
@@ -262,16 +276,16 @@ function getOidcRedirectUri(req) {
     try {
       const url = new URL(referer);
       const uri = `${url.protocol}//${url.host}/api/auth/oidc/callback`;
-      console.log('[OIDC Debug] Using Referer header:', uri);
+      logOidc('Using Referer header:', uri);
       return uri;
     } catch (e) {
-      console.log('[OIDC Debug] Failed to parse referer:', referer);
+      logOidc('Failed to parse referer:', referer);
     }
   }
   // 3. Explicit FRONTEND_URL env var
   if (process.env.FRONTEND_URL) {
     const uri = `${process.env.FRONTEND_URL.replace(/\/$/, '')}/api/auth/oidc/callback`;
-    console.log('[OIDC Debug] Using FRONTEND_URL env var:', uri);
+    logOidc('Using FRONTEND_URL env var:', uri);
     return uri;
   }
   // 4. Fallback: derive from request itself
@@ -281,12 +295,12 @@ function getOidcRedirectUri(req) {
   const host = req.get('host');
   
   if (protocol === 'http' && (req.headers['x-forwarded-host'] || req.headers['x-forwarded-for'])) {
-     console.log('[OIDC Debug] Coercing protocol to https because proxy headers detected without proto');
+     logOidc('Coercing protocol to https because proxy headers detected without proto');
      protocol = 'https';
   }
 
   const uri = `${protocol}://${host}/api/auth/oidc/callback`;
-  console.log('[OIDC Debug] Using request host/protocol fallback:', uri);
+  logOidc('Using request host/protocol fallback:', uri);
   return uri;
 }
 
@@ -327,12 +341,12 @@ app.get('/api/auth/oidc/login', (req, res) => {
         authUrl.searchParams.set('scope', 'openid profile email');
         authUrl.searchParams.set('state', state);
 
-        console.log('[OIDC] Login redirect_uri:', redirect_uri);
-        console.log('[OIDC] Authorization URL:', authUrl.toString());
+        logOidc('Login redirect_uri:', redirect_uri);
+        logOidc('Authorization URL:', authUrl.toString());
         res.redirect(authUrl.toString());
       })
       .catch(err => {
-        console.error('Failed to fetch OIDC well-known config:', err);
+        logOidc('ERROR: Failed to fetch OIDC well-known config:', err.message);
         res.status(500).json({ error: 'Failed to initiate OIDC login due to unreachable issuer' });
       });
   });
@@ -361,16 +375,16 @@ app.get('/api/auth/oidc/callback', (req, res) => {
         if (stateObj.redirect_uri) {
            redirect_uri = stateObj.redirect_uri;
            decodedState = true;
-           console.log('[OIDC Debug] Successfully decoded state redirect_uri:', redirect_uri);
+           logOidc('Successfully decoded state redirect_uri:', redirect_uri);
         }
       }
     } catch (e) {
-      console.warn('[OIDC] Could not decode state param, using fallback redirect_uri');
+      logOidc('WARNING: Could not decode state param, using fallback redirect_uri');
     }
     const wellKnownUrl = getWellKnownUrl(issuer_url);
 
-    console.log('[OIDC] Callback received. Final redirect_uri used for token exchange:', redirect_uri, 'Decoded from state?', decodedState);
-    console.log('[OIDC] Well-known URL:', wellKnownUrl);
+    logOidc('Callback received. Final redirect_uri used for token exchange:', redirect_uri, 'Decoded from state?', decodedState);
+    logOidc('Well-known URL:', wellKnownUrl);
 
     try {
       // 1. Get token endpoint from well-known config
@@ -380,53 +394,48 @@ app.get('/api/auth/oidc/callback', (req, res) => {
         throw new Error(`Well-known config fetch failed (${wellKnownRes.status}): ${text.substring(0, 200)}`);
       }
       const openIdConfig = await wellKnownRes.json();
-      console.log('[OIDC] Token endpoint:', openIdConfig.token_endpoint);
-      console.log('[OIDC] Userinfo endpoint:', openIdConfig.userinfo_endpoint);
+      logOidc('Token endpoint:', openIdConfig.token_endpoint);
+      logOidc('Userinfo endpoint:', openIdConfig.userinfo_endpoint);
       
-      // 2. Exchange code for token
+      // 2. Exchange code for tokens
+      const tokenBody = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: client_id,
+          redirect_uri: redirect_uri
+        });
+
+      logOidc('Token request body:', tokenBody.toString(), 'Auth Header:', 'Basic ' + Buffer.from(`${client_id}:${client_secret}`).toString('base64').substring(0, 10) + '...');
       const tokenRes = await fetch(openIdConfig.token_endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': 'Basic ' + Buffer.from(`${client_id}:${client_secret}`).toString('base64')
         },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: code,
-          client_id: client_id,
-          client_secret: client_secret,
-          redirect_uri: redirect_uri
-        })
+        body: tokenBody
       });
-      
-      const tokenText = await tokenRes.text();
-      console.log('[OIDC] Token response status:', tokenRes.status);
-      
-      let tokenData;
-      try {
-        tokenData = JSON.parse(tokenText);
-      } catch (e) {
-        throw new Error(`Token response is not valid JSON: ${tokenText.substring(0, 300)}`);
-      }
-      
+
+      logOidc('Token response status:', tokenRes.status);
       if (!tokenRes.ok) {
-        throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
+        const text = await tokenRes.text();
+        logOidc('ERROR: Token exchange failed body:', text);
+        return res.redirect(`/login?error=OIDC_Token_Error`);
       }
 
-      // 3. Get user info
-      // We will check standard claims later
-      console.log('[OIDC] Token type:', tokenData.token_type, 'access_token prefix:', tokenData.access_token?.substring(0, 20) + '...');
-      console.log('[OIDC] Scopes granted:', tokenData.scope);
+      const tokenData = await tokenRes.json();
+      logOidc('Token type:', tokenData.token_type, 'access_token prefix:', tokenData.access_token?.substring(0, 20) + '...');
+      logOidc('Scopes granted:', tokenData.scope);
       
-      // Also try decoding the access_token (Authentik's access_token is a JWT with user claims)
+      // Pre-extract from access_token if possible (often used as fallback)
       let accessTokenClaims = null;
-      try {
-        const atParts = tokenData.access_token.split('.');
-        if (atParts.length === 3) {
-          accessTokenClaims = JSON.parse(Buffer.from(atParts[1], 'base64url').toString('utf8'));
-          console.log('[OIDC] access_token JWT claims:', JSON.stringify(accessTokenClaims));
+      if (tokenData.access_token && tokenData.access_token.includes('.')) {
+        try {
+          const payloadB64 = tokenData.access_token.split('.')[1];
+          accessTokenClaims = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+          logOidc('access_token JWT claims:', JSON.stringify(accessTokenClaims));
+        } catch (e) {
+          logOidc('access_token is not a decodable JWT');
         }
-      } catch (e) {
-        console.log('[OIDC] access_token is not a decodable JWT');
       }
       
       let userInfo;
@@ -440,53 +449,64 @@ app.get('/api/auth/oidc/callback', (req, res) => {
           }
         });
         
-        console.log('[OIDC] UserInfo response status:', userInfoRes.status);
+        logOidc('UserInfo response status:', userInfoRes.status);
         
         if (userInfoRes.ok) {
           const userInfoText = await userInfoRes.text();
-          console.log('[OIDC] UserInfo response body:', userInfoText.substring(0, 500));
+          logOidc('UserInfo response body:', userInfoText.substring(0, 500));
           if (userInfoText) {
             userInfo = JSON.parse(userInfoText);
           }
         } else {
-          console.warn('[OIDC] UserInfo endpoint returned', userInfoRes.status, '- will try id_token');
+          logOidc('WARNING: UserInfo endpoint returned', userInfoRes.status, '- will try id_token');
         }
       } catch (e) {
-        console.warn('[OIDC] UserInfo fetch error:', e.message, '- will try id_token');
+        logOidc('WARNING: UserInfo fetch error:', e.message, '- will try id_token');
       }
       
       // Fallback: decode id_token if userinfo didn't work
       if (!userInfo || !(userInfo.preferred_username || userInfo.name || userInfo.email)) {
         if (tokenData.id_token) {
-          try {
-            const parts = tokenData.id_token.split('.');
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-            console.log('[OIDC] id_token claims:', JSON.stringify(payload));
-            // Merge: prefer userinfo data, supplement with id_token
-            userInfo = { ...payload, ...(userInfo || {}) };
-          } catch (e) {
-            console.error('[OIDC] Failed to decode id_token:', e.message);
+          const parts = tokenData.id_token.split('.');
+          if (parts.length === 3) {
+            try {
+              const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+              logOidc('id_token claims:', JSON.stringify(payload));
+              // Merge: prefer userinfo data, supplement with id_token
+              userInfo = { ...payload, ...(userInfo || {}) };
+            } catch (e) {
+              logOidc('ERROR: Failed to decode id_token:', e.message);
+            }
           }
         }
+      }
+
+      // Final fallback: access_token claims (Keycloak often puts user info here)
+      if (!userInfo && accessTokenClaims) {
+        userInfo = accessTokenClaims;
       }
 
       if (!userInfo) {
         throw new Error('Could not obtain user information from either userinfo endpoint or id_token');
       }
 
-      console.log('[OIDC] Final userInfo:', JSON.stringify(userInfo));
+      logOidc('Final userInfo:', JSON.stringify(userInfo));
 
       // 4. Map OIDC user to local user
       // Use standard fallbacks for username
       const username = userInfo.preferred_username || userInfo.name || userInfo.email || userInfo.sub;
-      console.log('[OIDC] Extracted username:', username);
+      logOidc('Extracted username:', username);
       
       if (!username) {
+        logOidc('ERROR: OIDC provider did not return a usable username');
         throw new Error('OIDC provider did not return a usable username. UserInfo: ' + JSON.stringify(userInfo));
       }
 
       db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-        if (err) return res.status(500).send('Database error');
+        if (err) {
+          logOidc('ERROR: Database error during user lookup:', err.message);
+          return res.status(500).send('Database error');
+        }
         
         let localUserId;
         let localUserRole;
